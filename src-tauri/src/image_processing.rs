@@ -21,6 +21,8 @@ pub struct ImageMetadata {
     pub adjustments: Value,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub source_raw_relative_path: Option<String>,
 }
 
 impl Default for ImageMetadata {
@@ -30,6 +32,7 @@ impl Default for ImageMetadata {
             rating: 0,
             adjustments: Value::Null,
             tags: None,
+            source_raw_relative_path: None,
         }
     }
 }

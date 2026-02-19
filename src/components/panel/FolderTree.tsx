@@ -12,13 +12,17 @@ export interface FolderTree {
 }
 
 interface FolderTreeProps {
+  collections?: Array<{ name: string; path: string }>;
   expandedFolders: Set<string>;
   isLoading: boolean;
   isResizing: boolean;
   isVisible: boolean;
+  onCollectionSelect?(collectionName: string): void;
+  onCollectionContextMenu?(event: any, collectionName: string): void;
   onContextMenu(event: any, path: string | null, isPinned?: boolean): void;
   onFolderSelect(folder: string): void;
   onToggleFolder(folder: string): void;
+  selectedCollectionName?: string | null;
   selectedPath: string | null;
   setIsVisible(visible: boolean): void;
   style: any;
@@ -252,13 +256,17 @@ function TreeNode({
 }
 
 export default function FolderTree({
+  collections = [],
   expandedFolders,
   isLoading,
   isResizing,
   isVisible,
+  onCollectionSelect,
+  onCollectionContextMenu,
   onContextMenu,
   onFolderSelect,
   onToggleFolder,
+  selectedCollectionName,
   selectedPath,
   setIsVisible,
   style,
@@ -447,6 +455,41 @@ export default function FolderTree({
                     </motion.div>
                   )}
                 </AnimatePresence>
+              </>
+            )}
+
+            {collections.length > 0 && (
+              <>
+                <div>
+                  <SectionHeader
+                    title="Collections"
+                    isOpen={true}
+                    onToggle={() => {}}
+                  />
+                </div>
+                <div className="pt-1 pb-2">
+                  {collections.map((collection) => (
+                    <div
+                      key={collection.name}
+                      className={clsx('flex items-center gap-2 p-1.5 rounded-md transition-colors cursor-pointer', {
+                        'bg-surface': selectedCollectionName === collection.name,
+                        'hover:bg-card-active': selectedCollectionName !== collection.name,
+                      })}
+                      onClick={() => onCollectionSelect?.(collection.name)}
+                      onContextMenu={(e: any) => onCollectionContextMenu?.(e, collection.name)}
+                    >
+                      <Folder size={16} className={selectedCollectionName === collection.name ? 'text-primary' : 'text-text-secondary'} />
+                      <span
+                        className={clsx('truncate select-none cursor-pointer flex-1 font-medium', {
+                          'text-primary': selectedCollectionName === collection.name,
+                          'text-text-primary': selectedCollectionName !== collection.name,
+                        })}
+                      >
+                        {collection.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </>
             )}
 
