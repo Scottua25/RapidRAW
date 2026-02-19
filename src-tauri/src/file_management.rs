@@ -518,6 +518,45 @@ pub fn parse_virtual_path(virtual_path: &str) -> (PathBuf, PathBuf) {
     (source_path, sidecar_path)
 }
 
+fn extract_query_param(path: &str, key: &str) -> Option<String> {
+    let (_, query) = path.split_once('?')?;
+    for part in query.split('&') {
+        let (k, v) = part.split_once('=')?;
+        if k == key {
+            return Some(v.to_string());
+        }
+    }
+    None
+}
+
+fn session_root_from_settings(app_handle: &AppHandle) -> Option<String> {
+    load_settings(app_handle.clone())
+        .ok()
+        .and_then(|settings| settings.last_root_path)
+}
+
+fn resolve_virtual_paths_for_session(path: &str, session_root: Option<&str>) -> (PathBuf, PathBuf) {
+    let (source_path, sidecar_path) = parse_virtual_path(path);
+    let collection_name = extract_query_param(path, "collection");
+    let vc_id = extract_query_param(path, "vc");
+
+    if let (Some(root), Some(collection), Some(vc)) = (session_root, collection_name, vc_id) {
+        let raw_filename = source_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let vc_part = if vc.starts_with("vc_") { vc } else { format!("vc_{}", vc) };
+        let collection_sidecar = Path::new(root)
+            .join("rr-collections")
+            .join(collection)
+            .join(format!("{}.{}.rrdata", raw_filename, vc_part));
+        (source_path, collection_sidecar)
+    } else {
+        (source_path, sidecar_path)
+    }
+}
+
 #[tauri::command]
 pub async fn read_exif_for_paths(
     paths: Vec<String>,
@@ -848,6 +887,9 @@ fn scan_dir_lazy(
 
             let should_scan = is_expanded || prefetch_one_level;
             let next_prefetch = is_expanded;
+            if name_str == "rr-collections" {
+                continue;
+            }
 
             let (grand_children, sub_dir_own_images) = if should_scan {
                 scan_dir_lazy(
@@ -916,7 +958,6 @@ fn get_folder_tree_sync(
 
     let (children, own_count) = scan_dir_lazy(root_path, &expanded_set, show_image_counts, true)
         .map_err(|e| e.to_string())?;
-
     let children_sum: usize = children.iter().map(|c| c.image_count).sum();
     let has_subdirs = children.iter().any(|c| c.is_dir);
 
@@ -1035,7 +1076,8 @@ pub fn generate_thumbnail_data(
     preloaded_image: Option<&DynamicImage>,
     app_handle: &AppHandle,
 ) -> anyhow::Result<DynamicImage> {
-    let (source_path, sidecar_path) = parse_virtual_path(path_str);
+    let session_root = session_root_from_settings(app_handle);
+    let (source_path, sidecar_path) = resolve_virtual_paths_for_session(path_str, session_root.as_deref());
     let source_path_str = source_path.to_string_lossy().to_string();
     let is_raw = is_raw_file(&source_path_str);
 
@@ -1339,7 +1381,8 @@ fn generate_single_thumbnail_and_cache(
     force_regenerate: bool,
     app_handle: &AppHandle,
 ) -> Option<(String, u8)> {
-    let (source_path, sidecar_path) = parse_virtual_path(path_str);
+    let session_root = session_root_from_settings(app_handle);
+    let (source_path, sidecar_path) = resolve_virtual_paths_for_session(path_str, session_root.as_deref());
 
     let img_mod_time = fs::metadata(source_path)
         .ok()?
@@ -1817,7 +1860,8 @@ pub fn save_metadata_and_update_thumbnail(
     app_handle: AppHandle,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
-    let (source_path, sidecar_path) = parse_virtual_path(&path);
+    let session_root = session_root_from_settings(&app_handle);
+    let (source_path, sidecar_path) = resolve_virtual_paths_for_session(&path, session_root.as_deref());
 
     let mut metadata: ImageMetadata = if sidecar_path.exists() {
         fs::read_to_string(&sidecar_path)
@@ -1911,9 +1955,10 @@ pub async fn apply_adjustments_to_paths(
         let settings = load_settings(app_handle.clone()).unwrap_or_default();
         let enable_xmp_sync = settings.enable_xmp_sync.unwrap_or(false);
         let create_xmp_if_missing = settings.create_xmp_if_missing.unwrap_or(false);
+        let session_root = session_root_from_settings(&app_handle);
 
         paths.par_iter().for_each(|path| {
-            let (_, sidecar_path) = parse_virtual_path(path);
+            let (_, sidecar_path) = resolve_virtual_paths_for_session(path, session_root.as_deref());
 
             let mut existing_metadata: ImageMetadata = if sidecar_path.exists() {
                 fs::read_to_string(&sidecar_path)
@@ -1945,7 +1990,7 @@ pub async fn apply_adjustments_to_paths(
             }
 
             if enable_xmp_sync {
-                let source_path = parse_virtual_path(path).0;
+                let source_path = resolve_virtual_paths_for_session(path, session_root.as_deref()).0;
                 sync_metadata_to_xmp(&source_path, &existing_metadata, create_xmp_if_missing);
             }
         });
@@ -2003,9 +2048,10 @@ pub async fn reset_adjustments_for_paths(
         let settings = load_settings(app_handle.clone()).unwrap_or_default();
         let enable_xmp_sync = settings.enable_xmp_sync.unwrap_or(false);
         let create_xmp_if_missing = settings.create_xmp_if_missing.unwrap_or(false);
+        let session_root = session_root_from_settings(&app_handle);
 
         paths.par_iter().for_each(|path| {
-            let (_, sidecar_path) = parse_virtual_path(path);
+            let (_, sidecar_path) = resolve_virtual_paths_for_session(path, session_root.as_deref());
 
             let mut existing_metadata: ImageMetadata = if sidecar_path.exists() {
                 fs::read_to_string(&sidecar_path)
@@ -2027,7 +2073,7 @@ pub async fn reset_adjustments_for_paths(
             }
 
             if enable_xmp_sync {
-                let source_path = parse_virtual_path(path).0;
+                let source_path = resolve_virtual_paths_for_session(path, session_root.as_deref()).0;
                 sync_metadata_to_xmp(&source_path, &existing_metadata, create_xmp_if_missing);
             }
         });
@@ -2087,10 +2133,12 @@ pub async fn apply_auto_adjustments_to_paths(
         let linear_mode = settings.linear_raw_mode;
         let enable_xmp_sync = settings.enable_xmp_sync.unwrap_or(false);
         let create_xmp_if_missing = settings.create_xmp_if_missing.unwrap_or(false);
+        let session_root = settings.last_root_path;
 
         paths.par_iter().for_each(|path| {
             let result: Result<(), String> = (|| {
-                let (source_path, sidecar_path) = parse_virtual_path(path);
+                let (source_path, sidecar_path) =
+                    resolve_virtual_paths_for_session(path, session_root.as_deref());
                 let source_path_str = source_path.to_string_lossy().to_string();
 
                 let file_bytes = fs::read(&source_path).map_err(|e| e.to_string())?;
@@ -2211,9 +2259,9 @@ pub fn set_color_label_for_paths(
     let settings = load_settings(app_handle.clone()).unwrap_or_default();
     let enable_xmp_sync = settings.enable_xmp_sync.unwrap_or(false);
     let create_xmp_if_missing = settings.create_xmp_if_missing.unwrap_or(false);
-
+    let session_root = session_root_from_settings(&app_handle);
     paths.par_iter().for_each(|path| {
-        let (_, sidecar_path) = parse_virtual_path(path);
+        let (_, sidecar_path) = resolve_virtual_paths_for_session(path, session_root.as_deref());
 
         let mut metadata: ImageMetadata = if sidecar_path.exists() {
             fs::read_to_string(&sidecar_path)
@@ -2244,7 +2292,7 @@ pub fn set_color_label_for_paths(
         }
 
         if enable_xmp_sync {
-            let source_path = parse_virtual_path(path).0;
+            let source_path = resolve_virtual_paths_for_session(path, session_root.as_deref()).0;
             sync_metadata_to_xmp(&source_path, &metadata, create_xmp_if_missing);
         }
     });
@@ -2254,10 +2302,10 @@ pub fn set_color_label_for_paths(
 
 #[tauri::command]
 pub fn load_metadata(path: String, app_handle: AppHandle) -> Result<ImageMetadata, String> {
-    let settings = load_settings(app_handle).unwrap_or_default();
+    let settings = load_settings(app_handle.clone()).unwrap_or_default();
     let enable_xmp_sync = settings.enable_xmp_sync.unwrap_or(false);
-
-    let (source_path, sidecar_path) = parse_virtual_path(&path);
+    let session_root = session_root_from_settings(&app_handle);
+    let (source_path, sidecar_path) = resolve_virtual_paths_for_session(&path, session_root.as_deref());
     let mut metadata: ImageMetadata = if sidecar_path.exists() {
         let file_content = fs::read_to_string(&sidecar_path).map_err(|e| e.to_string())?;
         serde_json::from_str(&file_content).unwrap_or_default()
@@ -2623,11 +2671,12 @@ pub fn show_in_finder(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn delete_files_from_disk(paths: Vec<String>) -> Result<(), String> {
+pub fn delete_files_from_disk(paths: Vec<String>, app_handle: AppHandle) -> Result<(), String> {
+    let session_root = session_root_from_settings(&app_handle);
     let mut files_to_trash = HashSet::new();
 
     for path_str in paths {
-        let (source_path, sidecar_path) = parse_virtual_path(&path_str);
+        let (source_path, sidecar_path) = resolve_virtual_paths_for_session(&path_str, session_root.as_deref());
 
         if path_str.contains("?vc=") {
             if sidecar_path.exists() {

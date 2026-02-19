@@ -4,6 +4,7 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 mod ai_connector;
 mod ai_processing;
+mod collections;
 mod culling;
 mod denoising;
 mod exif_processing;
@@ -571,9 +572,21 @@ fn get_or_load_lut(state: &tauri::State<AppState>, path: &str) -> Result<Arc<Lut
     Ok(arc_lut)
 }
 
+fn extract_query_param(path: &str, key: &str) -> Option<String> {
+    let (_, query) = path.split_once('?')?;
+    for part in query.split('&') {
+        let (k, v) = part.split_once('=')?;
+        if k == key {
+            return Some(v.to_string());
+        }
+    }
+    None
+}
+
 #[tauri::command]
 async fn load_image(
     path: String,
+    session_root: String,
     state: tauri::State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<LoadImageResult, String> {
@@ -597,6 +610,29 @@ async fn load_image(
     }
 
     let (source_path, sidecar_path) = parse_virtual_path(&path);
+    let sidecar_path = {
+        let collection_name = extract_query_param(&path, "collection");
+        let vc_id = extract_query_param(&path, "vc");
+
+        if let (Some(collection_name), Some(vc_id)) = (collection_name, vc_id) {
+            let raw_filename = source_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let vc_part = if vc_id.starts_with("vc_") {
+                vc_id
+            } else {
+                format!("vc_{}", vc_id)
+            };
+            Path::new(&session_root)
+                .join("rr-collections")
+                .join(collection_name)
+                .join(format!("{}.{}.rrdata", raw_filename, vc_part))
+        } else {
+            sidecar_path
+        }
+    };
     let source_path_str = source_path.to_string_lossy().to_string();
 
     let metadata: ImageMetadata = if sidecar_path.exists() {
@@ -4623,6 +4659,12 @@ pub fn run() {
             save_hdr,
             apply_denoising,
             save_denoised_image,
+            collections::list_collections,
+            collections::create_collection,
+            collections::rename_collection,
+            collections::delete_collection,
+            collections::list_collection_images,
+            collections::add_paths_to_collection,
             load_and_parse_lut,
             fetch_community_presets,
             generate_all_community_previews,
