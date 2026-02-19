@@ -96,6 +96,7 @@ interface MainLibraryProps {
   onThumbnailAspectRatioChange(aspectRatio: ThumbnailAspectRatio): void;
   onThumbnailSizeChange(size: ThumbnailSize): void;
   rootPath: string | null;
+  selectedCollectionName?: string | null;
   searchCriteria: SearchCriteria;
   setFilterCriteria(criteria: FilterCriteria): void;
   setLibraryScrollTop(scrollTop: number): void;
@@ -1138,6 +1139,7 @@ export default function MainLibrary({
   onThumbnailAspectRatioChange,
   onThumbnailSizeChange,
   rootPath,
+  selectedCollectionName,
   searchCriteria,
   setFilterCriteria,
   setLibraryScrollTop,
@@ -1169,9 +1171,9 @@ export default function MainLibrary({
   });
 
   const groups = useMemo(() => {
-    if (libraryViewMode === LibraryViewMode.Flat) return null;
+    if (libraryViewMode === LibraryViewMode.Flat || selectedCollectionName) return null;
     return groupImagesByFolder(imageList, currentFolderPath);
-  }, [imageList, currentFolderPath, libraryViewMode]);
+  }, [imageList, currentFolderPath, libraryViewMode, selectedCollectionName]);
 
   const handleSortChange = useCallback(
     (criteria: SortCriteria | ((prev: SortCriteria) => SortCriteria)) => {
@@ -1212,7 +1214,7 @@ export default function MainLibrary({
     let targetTop = 0;
     let found = false;
 
-    if (libraryViewMode === LibraryViewMode.Recursive) {
+    if (libraryViewMode === LibraryViewMode.Recursive && !selectedCollectionName) {
       const groups = groupImagesByFolder(imageList, currentFolderPath);
       for (const group of groups) {
         if (group.images.length === 0) continue;

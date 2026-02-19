@@ -210,6 +210,22 @@ interface SearchCriteria {
   mode: 'AND' | 'OR';
 }
 
+interface CollectionInfo {
+  name: string;
+  path: string;
+}
+
+interface CollectionImageEntry {
+  fileName: string;
+  path: string;
+  vcId?: string | null;
+  sourceRawRelativePath?: string | null;
+  tags?: Array<string> | null;
+  isEdited?: boolean;
+  modified?: number;
+  isMissing?: boolean;
+}
+
 const RIGHT_PANEL_ORDER = [
   Panel.Metadata,
   Panel.Adjustments,
@@ -255,6 +271,12 @@ const getParentDir = (filePath: string): string => {
     return '';
   }
   return filePath.substring(0, lastSeparatorIndex);
+};
+
+const resolvePathFromRoot = (root: string, relativePath: string): string => {
+  const separator = root.includes('\\') ? '\\' : '/';
+  const normalizedRelative = relativePath.replace(/[\\/]/g, separator);
+  return root.endsWith(separator) ? `${root}${normalizedRelative}` : `${root}${separator}${normalizedRelative}`;
 };
 
 const useAsyncThrottle = <T extends unknown[]>(
@@ -309,6 +331,8 @@ function App() {
   const [expandedFolders, setExpandedFolders] = useState(new Set<string>());
   const [folderTree, setFolderTree] = useState<any>(null);
   const [pinnedFolderTrees, setPinnedFolderTrees] = useState<any[]>([]);
+  const [collections, setCollections] = useState<Array<CollectionInfo>>([]);
+  const [selectedCollectionName, setSelectedCollectionName] = useState<string | null>(null);
   const [imageList, setImageList] = useState<Array<ImageFile>>([]);
   const [imageRatings, setImageRatings] = useState<Record<string, number>>({});
   const [sortCriteria, setSortCriteria] = useState<SortCriteria>({ key: 'name', order: SortDirection.Ascending });
@@ -1735,6 +1759,116 @@ function App() {
     }
   };
 
+  const refreshCollections = useCallback(async () => {
+    if (!rootPath) {
+      setCollections([]);
+      return;
+    }
+    try {
+      const items: CollectionInfo[] = await invoke(Invokes.ListCollections, { sessionRoot: rootPath });
+      setCollections(items);
+    } catch (err) {
+      console.error('Failed to load collections:', err);
+      setCollections([]);
+    }
+  }, [rootPath]);
+
+  useEffect(() => {
+    refreshCollections();
+  }, [refreshCollections]);
+
+  const loadCollectionFiles = useCallback(
+    async (collectionName: string): Promise<Array<ImageFile>> => {
+      if (!rootPath) return [];
+      const entries: CollectionImageEntry[] = await invoke(Invokes.ListCollectionImages, {
+        sessionRoot: rootPath,
+        collectionName,
+      });
+
+      return entries
+        .filter((entry) => !!entry.sourceRawRelativePath && !!entry.vcId)
+        .map((entry) => {
+          const absoluteRawPath = resolvePathFromRoot(rootPath, entry.sourceRawRelativePath as string);
+          return {
+            path: `${absoluteRawPath}?vc=${entry.vcId}&collection=${collectionName}`,
+            modified: entry.modified ?? 0,
+            is_edited: entry.isEdited ?? false,
+            tags: entry.tags ?? null,
+            exif: null,
+            is_virtual_copy: true,
+          } as ImageFile;
+        });
+    },
+    [rootPath],
+  );
+
+  const handleSelectCollection = useCallback(
+    async (collectionName: string) => {
+      await invoke('cancel_thumbnail_generation');
+      setIsViewLoading(true);
+      setSearchCriteria({ tags: [], text: '', mode: 'OR' });
+      setLibraryScrollTop(0);
+      setThumbnails({});
+
+      try {
+        setSelectedCollectionName(collectionName);
+        setCurrentFolderPath(null);
+        setActiveView('library');
+        setImageList([]);
+        setImageRatings({});
+        setMultiSelectedPaths([]);
+        setLibraryActivePath(null);
+
+        if (selectedImage) {
+          setSelectedImage(null);
+          setFinalPreviewUrl(null);
+          setUncroppedAdjustedPreviewUrl(null);
+          setHistogram(null);
+        }
+
+        const files = await loadCollectionFiles(collectionName);
+        setImageList(files);
+      } catch (err) {
+        console.error('Failed to load collection contents:', err);
+        setError('Failed to load images from the selected collection.');
+      } finally {
+        setIsViewLoading(false);
+      }
+    },
+    [loadCollectionFiles, selectedImage],
+  );
+
+  const handleAddPathsToCollection = useCallback(
+    async (paths: Array<string>, collectionName: string) => {
+      if (!rootPath || paths.length === 0) return;
+      await invoke(Invokes.AddPathsToCollection, {
+        sessionRoot: rootPath,
+        collectionName,
+        paths,
+      });
+      await refreshCollections();
+      if (selectedCollectionName === collectionName) {
+        await handleSelectCollection(collectionName);
+      }
+    },
+    [rootPath, refreshCollections, selectedCollectionName, handleSelectCollection],
+  );
+
+  const handleCreateCollectionAndAdd = useCallback(
+    async (paths: Array<string>) => {
+      if (!rootPath || paths.length === 0) return;
+      const collectionNameInput = window.prompt('New collection name');
+      if (!collectionNameInput || !collectionNameInput.trim()) return;
+
+      const created: CollectionInfo = await invoke(Invokes.CreateCollection, {
+        sessionRoot: rootPath,
+        collectionName: collectionNameInput.trim(),
+      });
+      await handleAddPathsToCollection(paths, created.name);
+    },
+    [rootPath, handleAddPathsToCollection],
+  );
+
   const handleSelectSubfolder = useCallback(
     async (path: string | null, isNewRoot = false, preloadedImages?: ImageFile[]) => {
       await invoke('cancel_thumbnail_generation');
@@ -1743,6 +1877,7 @@ function App() {
       setLibraryScrollTop(0);
       setThumbnails({});
       try {
+        setSelectedCollectionName(null);
         setCurrentFolderPath(path);
         setActiveView('library');
 
@@ -1869,10 +2004,34 @@ function App() {
   );
 
   const handleLibraryRefresh = useCallback(() => {
+    if (selectedCollectionName) {
+      handleSelectCollection(selectedCollectionName);
+      return;
+    }
     if (currentFolderPath) handleSelectSubfolder(currentFolderPath, false);
-  }, [currentFolderPath, handleSelectSubfolder]);
+  }, [currentFolderPath, handleSelectSubfolder, selectedCollectionName, handleSelectCollection]);
 
   const refreshImageList = useCallback(async () => {
+    if (selectedCollectionName) {
+      try {
+        const files = await loadCollectionFiles(selectedCollectionName);
+        setImageList((prevList) => {
+          const prevMap = new Map(prevList.map((img) => [img.path, img]));
+          return files.map((newFile) => {
+            const existing = prevMap.get(newFile.path);
+            if (existing && existing.modified === newFile.modified) {
+              return existing;
+            }
+            return newFile;
+          });
+        });
+      } catch (err) {
+        console.error('Failed to refresh collection image list:', err);
+        setError('Failed to refresh collection image list.');
+      }
+      return;
+    }
+
     if (!currentFolderPath) return;
     try {
       const command =
@@ -1928,7 +2087,7 @@ function App() {
       console.error('Failed to refresh image list:', err);
       setError('Failed to refresh image list.');
     }
-  }, [currentFolderPath, sortCriteria.key, appSettings?.enableExifReading, libraryViewMode]);
+  }, [currentFolderPath, sortCriteria.key, appSettings?.enableExifReading, libraryViewMode, selectedCollectionName, loadCollectionFiles]);
 
   const handleToggleFolder = useCallback((path: string) => {
     setExpandedFolders((prev) => {
@@ -3260,6 +3419,8 @@ function App() {
   const handleGoHome = () => {
     setRootPath(null);
     setCurrentFolderPath(null);
+    setSelectedCollectionName(null);
+    setCollections([]);
     setImageList([]);
     setImageRatings({});
     setFolderTree(null);
@@ -3353,6 +3514,7 @@ function App() {
   useEffect(() => {
     if (selectedImage && !selectedImage.isReady && selectedImage.path) {
       let isEffectActive = true;
+      const isCollectionImage = selectedImage.path.includes('&collection=');
 
       const loadMetadataEarly = async () => {
         try {
@@ -3373,11 +3535,16 @@ function App() {
         }
       };
 
-      loadMetadataEarly();
+      if (!isCollectionImage) {
+        loadMetadataEarly();
+      }
 
       const loadFullImageData = async () => {
         try {
-          const loadImageResult: any = await invoke(Invokes.LoadImage, { path: selectedImage.path });
+          const loadImageResult: any = await invoke(Invokes.LoadImage, {
+            path: selectedImage.path,
+            sessionRoot: rootPath,
+          });
           if (!isEffectActive) {
             return;
           }
@@ -3425,6 +3592,17 @@ function App() {
             return currentSelected;
           });
 
+          if (isCollectionImage) {
+            let initialAdjusts;
+            if (loadImageResult.metadata?.adjustments && !loadImageResult.metadata.adjustments.is_null) {
+              initialAdjusts = normalizeLoadedAdjustments(loadImageResult.metadata.adjustments);
+            } else {
+              initialAdjusts = { ...INITIAL_ADJUSTMENTS };
+            }
+            setLiveAdjustments(initialAdjusts);
+            resetAdjustmentsHistory(initialAdjusts);
+          }
+
           // Only update aspect ratio if it wasn't loaded from metadata
           setLiveAdjustments((prev: Adjustments) => {
             if (!prev.aspectRatio && !prev.crop) {
@@ -3449,7 +3627,7 @@ function App() {
         isEffectActive = false;
       };
     }
-  }, [selectedImage?.path, selectedImage?.isReady, resetAdjustmentsHistory, appSettings?.editorPreviewResolution]);
+  }, [selectedImage?.path, selectedImage?.isReady, resetAdjustmentsHistory, appSettings?.editorPreviewResolution, rootPath]);
 
   const handleClearSelection = () => {
     if (selectedImage) {
@@ -3623,6 +3801,17 @@ function App() {
     };
 
     const commonTags = getCommonTags([selectedImage.path]);
+    const addToCollectionSubmenu = [
+      ...collections.map((collection) => ({
+        label: collection.name,
+        onClick: () => handleAddPathsToCollection([selectedImage.path], collection.name),
+      })),
+      { type: OPTION_SEPARATOR },
+      {
+        label: 'New Collection...',
+        onClick: () => handleCreateCollectionAndAdd([selectedImage.path]),
+      },
+    ];
 
     const options: Array<Option> = [
       {
@@ -3747,6 +3936,11 @@ function App() {
           },
         ],
       },
+      {
+        label: 'Add to Collection',
+        icon: Folder,
+        submenu: addToCollectionSubmenu,
+      },
       { type: OPTION_SEPARATOR },
       {
         label: 'Reset Adjustments',
@@ -3790,6 +3984,17 @@ function App() {
     }
 
     const commonTags = getCommonTags(finalSelection);
+    const addToCollectionSubmenu = [
+      ...collections.map((collection) => ({
+        label: collection.name,
+        onClick: () => handleAddPathsToCollection(finalSelection, collection.name),
+      })),
+      { type: OPTION_SEPARATOR },
+      {
+        label: 'New Collection...',
+        onClick: () => handleCreateCollectionAndAdd(finalSelection),
+      },
+    ];
 
     const selectionCount = finalSelection.length;
     const isSingleSelection = selectionCount === 1;
@@ -4148,6 +4353,11 @@ function App() {
           },
         ],
       },
+      {
+        label: 'Add to Collection',
+        icon: Folder,
+        submenu: addToCollectionSubmenu,
+      },
       { type: OPTION_SEPARATOR },
       {
         disabled: !isSingleSelection,
@@ -4336,6 +4546,76 @@ function App() {
     showContextMenu(event.clientX, event.clientY, options);
   };
 
+  const handleCollectionContextMenu = (event: any, collectionName: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!rootPath) {
+      return;
+    }
+
+    const options = [
+      {
+        icon: FileEdit,
+        label: 'Rename Collection',
+        onClick: async () => {
+          const newName = window.prompt('New collection name', collectionName);
+          if (!newName || !newName.trim()) {
+            return;
+          }
+
+          try {
+            const renamed: CollectionInfo = await invoke(Invokes.RenameCollection, {
+              sessionRoot: rootPath,
+              oldName: collectionName,
+              newName: newName.trim(),
+            });
+
+            await refreshCollections();
+
+            if (selectedCollectionName === collectionName) {
+              await handleSelectCollection(renamed.name);
+            }
+          } catch (err) {
+            setError(`Failed to rename collection: ${err}`);
+          }
+        },
+      },
+      { type: OPTION_SEPARATOR },
+      {
+        icon: Trash2,
+        isDestructive: true,
+        label: 'Delete Collection',
+        submenu: [
+          { label: 'Cancel', icon: X, onClick: () => {} },
+          {
+            label: 'Confirm',
+            icon: Check,
+            isDestructive: true,
+            onClick: async () => {
+              try {
+                await invoke(Invokes.DeleteCollection, {
+                  sessionRoot: rootPath,
+                  collectionName,
+                });
+
+                await refreshCollections();
+
+                if (selectedCollectionName === collectionName) {
+                  setSelectedCollectionName(null);
+                  await handleSelectSubfolder(rootPath, false);
+                }
+              } catch (err) {
+                setError(`Failed to delete collection: ${err}`);
+              }
+            },
+          },
+        ],
+      },
+    ];
+
+    showContextMenu(event.clientX, event.clientY, options);
+  };
+
   const handleMainLibraryContextMenu = (event: any) => {
     event.preventDefault();
     event.stopPropagation();
@@ -4390,13 +4670,17 @@ function App() {
     rootPath && (
       <>
         <FolderTree
+          collections={collections}
           expandedFolders={expandedFolders}
           isLoading={isTreeLoading}
           isResizing={isResizing}
           isVisible={uiVisibility.folderTree}
+          onCollectionContextMenu={handleCollectionContextMenu}
+          onCollectionSelect={handleSelectCollection}
           onContextMenu={handleFolderTreeContextMenu}
           onFolderSelect={(path) => handleSelectSubfolder(path, false)}
           onToggleFolder={handleToggleFolder}
+          selectedCollectionName={selectedCollectionName}
           selectedPath={currentFolderPath}
           setIsVisible={(value: boolean) =>
             setUiVisibility((prev: UiVisibility) => ({ ...prev, folderTree: value }))
@@ -4417,18 +4701,22 @@ function App() {
     )
   ), [
     rootPath,
+    collections,
     expandedFolders,
     isTreeLoading,
     isResizing,
     handleSelectSubfolder,
     uiVisibility.folderTree,
     currentFolderPath,
+    selectedCollectionName,
     leftPanelWidth,
     folderTree,
     pinnedFolderTrees,
     pinnedFolders,
     activeTreeSection,
-    copiedFilePaths
+    copiedFilePaths,
+    handleCollectionContextMenu,
+    handleSelectCollection,
   ]);
 
   const memoizedLibraryView = useMemo(() => (
@@ -4472,6 +4760,7 @@ function App() {
             onThumbnailAspectRatioChange={setThumbnailAspectRatio}
             onThumbnailSizeChange={setThumbnailSize}
             rootPath={rootPath}
+            selectedCollectionName={selectedCollectionName}
             searchCriteria={searchCriteria}
             setFilterCriteria={setFilterCriteria}
             setLibraryScrollTop={setLibraryScrollTop}

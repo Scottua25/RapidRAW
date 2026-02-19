@@ -428,6 +428,45 @@ pub fn parse_virtual_path(virtual_path: &str) -> (PathBuf, PathBuf) {
     (source_path, sidecar_path)
 }
 
+fn extract_query_param(path: &str, key: &str) -> Option<String> {
+    let (_, query) = path.split_once('?')?;
+    for part in query.split('&') {
+        let (k, v) = part.split_once('=')?;
+        if k == key {
+            return Some(v.to_string());
+        }
+    }
+    None
+}
+
+fn session_root_from_settings(app_handle: &AppHandle) -> Option<String> {
+    load_settings(app_handle.clone())
+        .ok()
+        .and_then(|settings| settings.last_root_path)
+}
+
+fn resolve_virtual_paths_for_session(path: &str, session_root: Option<&str>) -> (PathBuf, PathBuf) {
+    let (source_path, sidecar_path) = parse_virtual_path(path);
+    let collection_name = extract_query_param(path, "collection");
+    let vc_id = extract_query_param(path, "vc");
+
+    if let (Some(root), Some(collection), Some(vc)) = (session_root, collection_name, vc_id) {
+        let raw_filename = source_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let vc_part = if vc.starts_with("vc_") { vc } else { format!("vc_{}", vc) };
+        let collection_sidecar = Path::new(root)
+            .join("rr-collections")
+            .join(collection)
+            .join(format!("{}.{}.rrdata", raw_filename, vc_part));
+        (source_path, collection_sidecar)
+    } else {
+        (source_path, sidecar_path)
+    }
+}
+
 #[tauri::command]
 pub async fn read_exif_for_paths(
     paths: Vec<String>,
@@ -668,6 +707,9 @@ fn scan_dir_and_count(path: &Path) -> Result<(Vec<FolderNode>, usize), std::io::
             if name_str.starts_with('.') {
                 continue;
             }
+            if name_str == "rr-collections" {
+                continue;
+            }
 
             let (grand_children, sub_dir_own_images) = scan_dir_and_count(&current_path)?;
 
@@ -699,7 +741,6 @@ fn get_folder_tree_sync(path: String) -> Result<FolderNode, String> {
     }
 
     let (children, own_count) = scan_dir_and_count(root_path).map_err(|e| e.to_string())?;
-
     let children_sum: usize = children.iter().map(|c| c.image_count).sum();
 
     Ok(FolderNode {
@@ -778,7 +819,8 @@ pub fn generate_thumbnail_data(
     preloaded_image: Option<&DynamicImage>,
     app_handle: &AppHandle,
 ) -> anyhow::Result<DynamicImage> {
-    let (source_path, sidecar_path) = parse_virtual_path(path_str);
+    let session_root = session_root_from_settings(app_handle);
+    let (source_path, sidecar_path) = resolve_virtual_paths_for_session(path_str, session_root.as_deref());
     let source_path_str = source_path.to_string_lossy().to_string();
     let is_raw = is_raw_file(&source_path_str);
 
@@ -1021,7 +1063,8 @@ fn generate_single_thumbnail_and_cache(
     force_regenerate: bool,
     app_handle: &AppHandle,
 ) -> Option<(String, u8)> {
-    let (source_path, sidecar_path) = parse_virtual_path(path_str);
+    let session_root = session_root_from_settings(app_handle);
+    let (source_path, sidecar_path) = resolve_virtual_paths_for_session(path_str, session_root.as_deref());
 
     let img_mod_time = fs::metadata(source_path)
         .ok()?
@@ -1435,7 +1478,8 @@ pub fn save_metadata_and_update_thumbnail(
     app_handle: AppHandle,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
-    let (source_path, sidecar_path) = parse_virtual_path(&path);
+    let session_root = session_root_from_settings(&app_handle);
+    let (source_path, sidecar_path) = resolve_virtual_paths_for_session(&path, session_root.as_deref());
     let source_path_str = source_path.to_string_lossy().to_string();
 
     let mut metadata: ImageMetadata = if sidecar_path.exists() {
@@ -1513,8 +1557,9 @@ pub fn apply_adjustments_to_paths(
     adjustments: Value,
     app_handle: AppHandle,
 ) -> Result<(), String> {
+    let session_root = session_root_from_settings(&app_handle);
     paths.par_iter().for_each(|path| {
-        let (_, sidecar_path) = parse_virtual_path(path);
+        let (_, sidecar_path) = resolve_virtual_paths_for_session(path, session_root.as_deref());
 
         let mut existing_metadata: ImageMetadata = if sidecar_path.exists() {
             fs::read_to_string(&sidecar_path)
@@ -1593,8 +1638,9 @@ pub fn reset_adjustments_for_paths(
     paths: Vec<String>,
     app_handle: AppHandle,
 ) -> Result<(), String> {
+    let session_root = session_root_from_settings(&app_handle);
     paths.par_iter().for_each(|path| {
-        let (_, sidecar_path) = parse_virtual_path(path);
+        let (_, sidecar_path) = resolve_virtual_paths_for_session(path, session_root.as_deref());
 
         let mut existing_metadata: ImageMetadata = if sidecar_path.exists() {
             fs::read_to_string(&sidecar_path)
@@ -1666,10 +1712,12 @@ pub fn apply_auto_adjustments_to_paths(
     let settings = load_settings(app_handle.clone()).unwrap_or_default();
     let highlight_compression = settings.raw_highlight_compression.unwrap_or(2.5);
     let linear_mode = settings.linear_raw_mode;
+    let session_root = settings.last_root_path;
 
     paths.par_iter().for_each(|path| {
         let result: Result<(), String> = (|| {
-            let (source_path, sidecar_path) = parse_virtual_path(path);
+            let (source_path, sidecar_path) =
+                resolve_virtual_paths_for_session(path, session_root.as_deref());
             let source_path_str = source_path.to_string_lossy().to_string();
 
             let file_bytes = fs::read(&source_path).map_err(|e| e.to_string())?;
@@ -1779,9 +1827,10 @@ pub fn apply_auto_adjustments_to_paths(
 }
 
 #[tauri::command]
-pub fn set_color_label_for_paths(paths: Vec<String>, color: Option<String>) -> Result<(), String> {
+pub fn set_color_label_for_paths(paths: Vec<String>, color: Option<String>, app_handle: AppHandle) -> Result<(), String> {
+    let session_root = session_root_from_settings(&app_handle);
     paths.par_iter().for_each(|path| {
-        let (_, sidecar_path) = parse_virtual_path(path);
+        let (_, sidecar_path) = resolve_virtual_paths_for_session(path, session_root.as_deref());
 
         let mut metadata: ImageMetadata = if sidecar_path.exists() {
             fs::read_to_string(&sidecar_path)
@@ -1816,8 +1865,9 @@ pub fn set_color_label_for_paths(paths: Vec<String>, color: Option<String>) -> R
 }
 
 #[tauri::command]
-pub fn load_metadata(path: String) -> Result<ImageMetadata, String> {
-    let (_, sidecar_path) = parse_virtual_path(&path);
+pub fn load_metadata(path: String, app_handle: AppHandle) -> Result<ImageMetadata, String> {
+    let session_root = session_root_from_settings(&app_handle);
+    let (_, sidecar_path) = resolve_virtual_paths_for_session(&path, session_root.as_deref());
     if sidecar_path.exists() {
         let file_content = std::fs::read_to_string(sidecar_path).map_err(|e| e.to_string())?;
         serde_json::from_str(&file_content).map_err(|e| e.to_string())
@@ -2174,11 +2224,12 @@ pub fn show_in_finder(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn delete_files_from_disk(paths: Vec<String>) -> Result<(), String> {
+pub fn delete_files_from_disk(paths: Vec<String>, app_handle: AppHandle) -> Result<(), String> {
+    let session_root = session_root_from_settings(&app_handle);
     let mut files_to_trash = HashSet::new();
 
     for path_str in paths {
-        let (source_path, sidecar_path) = parse_virtual_path(&path_str);
+        let (source_path, sidecar_path) = resolve_virtual_paths_for_session(&path_str, session_root.as_deref());
 
         if path_str.contains("?vc=") {
             if sidecar_path.exists() {
