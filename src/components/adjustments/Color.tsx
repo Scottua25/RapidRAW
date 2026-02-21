@@ -146,6 +146,7 @@ const ColorGradingPanel = ({ adjustments, setAdjustments, onDragStateChange }: C
             onChange={(val: HueSatLum) => handleChange(ColorGrading.Midtones, val)}
             value={colorGrading.midtones}
             onDragStateChange={onDragStateChange}
+            showSaturationSlider={true}
           />
         </div>
       </div>
@@ -157,6 +158,7 @@ const ColorGradingPanel = ({ adjustments, setAdjustments, onDragStateChange }: C
             onChange={(val: HueSatLum) => handleChange(ColorGrading.Shadows, val)}
             value={colorGrading.shadows}
             onDragStateChange={onDragStateChange}
+            showSaturationSlider={true}
           />
         </div>
         <div className="w-full">
@@ -166,6 +168,7 @@ const ColorGradingPanel = ({ adjustments, setAdjustments, onDragStateChange }: C
             onChange={(val: HueSatLum) => handleChange(ColorGrading.Highlights, val)}
             value={colorGrading.highlights}
             onDragStateChange={onDragStateChange}
+            showSaturationSlider={true}
           />
         </div>
       </div>

@@ -11,6 +11,7 @@ interface ColorWheelProps {
   onChange(hsl: HueSatLum): void;
   value: HueSatLum;
   onDragStateChange?: (isDragging: boolean) => void;
+  showSaturationSlider?: boolean;
 }
 
 const ColorWheel = ({
@@ -19,6 +20,7 @@ const ColorWheel = ({
   onChange,
   value,
   onDragStateChange,
+  showSaturationSlider = false,
 }: ColorWheelProps) => {
   const effectiveValue = value || defaultValue;
   const { hue, saturation, luminance } = effectiveValue;
@@ -26,10 +28,11 @@ const ColorWheel = ({
   const [wheelSize, setWheelSize] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isWheelDragging, setIsWheelDragging] = useState(false);
-  const [isSliderDragging, setIsSliderDragging] = useState(false);
+  const [isLumSliderDragging, setIsLumSliderDragging] = useState(false);
+  const [isSatSliderDragging, setIsSatSliderDragging] = useState(false);
   const [isLabelHovered, setIsLabelHovered] = useState(false);
 
-  const isDragging = isWheelDragging || isSliderDragging;
+  const isDragging = isWheelDragging || isLumSliderDragging || isSatSliderDragging;
 
   useEffect(() => {
     const observer = new ResizeObserver((entries) => {
@@ -56,7 +59,6 @@ const ColorWheel = ({
   useEffect(() => {
     const handleInteractionEnd = () => {
       setIsWheelDragging(false);
-      onDragStateChange?.(isSliderDragging);
     };
     if (isWheelDragging) {
       window.addEventListener('mouseup', handleInteractionEnd);
@@ -66,7 +68,21 @@ const ColorWheel = ({
       window.removeEventListener('mouseup', handleInteractionEnd);
       window.removeEventListener('touchend', handleInteractionEnd);
     };
-  }, [isWheelDragging, isSliderDragging, onDragStateChange]);
+  }, [isWheelDragging]);
+
+  useEffect(() => {
+    const handleSatDragEnd = () => {
+      setIsSatSliderDragging(false);
+    };
+    if (isSatSliderDragging) {
+      window.addEventListener('mouseup', handleSatDragEnd);
+      window.addEventListener('touchend', handleSatDragEnd);
+    }
+    return () => {
+      window.removeEventListener('mouseup', handleSatDragEnd);
+      window.removeEventListener('touchend', handleSatDragEnd);
+    };
+  }, [isSatSliderDragging]);
 
   useEffect(() => {
     onDragStateChange?.(isDragging);
@@ -80,6 +96,10 @@ const ColorWheel = ({
     onChange({ ...effectiveValue, luminance: parseFloat(e.target.value) });
   };
 
+  const handleSatChange = (e: any) => {
+    onChange({ ...effectiveValue, saturation: parseFloat(e.target.value) });
+  };
+
   const handleReset = () => {
     onChange(defaultValue);
   };
@@ -91,6 +111,7 @@ const ColorWheel = ({
 
   const hsva: HsvaColor = { h: hue, s: saturation, v: 100, a: 1 };
   const hexColor = hsvaToHex(hsva);
+  const saturationTrackLength = Math.max(80, wheelSize || 120);
 
   const pointerSize = isWheelDragging ? 14 : 12;
   const pointerOffset = pointerSize / 2;
@@ -123,36 +144,68 @@ const ColorWheel = ({
         </span>
       </div>
 
-      <div ref={sizerRef} className="relative w-full aspect-square">
-        {wheelSize > 0 && (
-          <div
-            className="absolute inset-0 cursor-pointer"
-            onDoubleClick={handleReset}
-            onMouseDownCapture={handleDragStart}
-            onTouchStartCapture={handleDragStart}
-          >
-            <Wheel
-              color={hsva}
-              height={wheelSize}
-              onChange={handleWheelChange}
-              pointer={({ style }) => (
-                <div style={{ ...style, zIndex: 1 }}>
-                  <div
-                    style={{
-                      backgroundColor: saturation > 5 ? hexColor : 'transparent',
-                      border: '2px solid white',
-                      borderRadius: '50%',
-                      boxShadow: '0 0 2px rgba(0,0,0,0.5)',
-                      height: pointerSize,
-                      width: pointerSize,
-                      transform: `translate(-${pointerOffset}px, -${pointerOffset}px)`,
-                      transition: 'width 150ms ease-out, height 150ms ease-out, transform 150ms ease-out',
-                    }}
-                  />
-                </div>
-              )}
-              width={wheelSize}
-            />
+      <div className="w-full flex items-center justify-center gap-2">
+        <div ref={sizerRef} className="relative w-full aspect-square">
+          {wheelSize > 0 && (
+            <div
+              className="absolute inset-0 cursor-pointer"
+              onDoubleClick={handleReset}
+              onMouseDownCapture={handleDragStart}
+              onTouchStartCapture={handleDragStart}
+            >
+              <Wheel
+                color={hsva}
+                height={wheelSize}
+                onChange={handleWheelChange}
+                pointer={({ style }) => (
+                  <div style={{ ...style, zIndex: 1 }}>
+                    <div
+                      style={{
+                        backgroundColor: saturation > 5 ? hexColor : 'transparent',
+                        border: '2px solid white',
+                        borderRadius: '50%',
+                        boxShadow: '0 0 2px rgba(0,0,0,0.5)',
+                        height: pointerSize,
+                        width: pointerSize,
+                        transform: `translate(-${pointerOffset}px, -${pointerOffset}px)`,
+                        transition: 'width 150ms ease-out, height 150ms ease-out, transform 150ms ease-out',
+                      }}
+                    />
+                  </div>
+                )}
+                width={wheelSize}
+              />
+            </div>
+          )}
+        </div>
+
+        {showSaturationSlider && (
+          <div className="w-7 flex flex-col items-center justify-center">
+            <span className="text-[10px] text-text-secondary select-none mb-1">S</span>
+            <div
+              className="relative w-7 flex items-center justify-center"
+              style={{ height: `${saturationTrackLength}px` }}
+            >
+              <div
+                className="absolute w-1.5 rounded-full bg-card-active"
+                style={{ height: `${saturationTrackLength}px` }}
+              />
+              <input
+                className="absolute h-1.5 appearance-none bg-transparent cursor-pointer slider-input z-10"
+                style={{ transform: 'rotate(-90deg)', width: `${saturationTrackLength}px` }}
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={saturation}
+                onChange={handleSatChange}
+                onMouseDown={() => setIsSatSliderDragging(true)}
+                onMouseUp={() => setIsSatSliderDragging(false)}
+                onTouchStart={() => setIsSatSliderDragging(true)}
+                onTouchEnd={() => setIsSatSliderDragging(false)}
+                data-tooltip="Saturation"
+              />
+            </div>
           </div>
         )}
       </div>
@@ -164,7 +217,7 @@ const ColorWheel = ({
           max={100}
           min={-100}
           onChange={handleLumChange}
-          onDragStateChange={setIsSliderDragging}
+          onDragStateChange={setIsLumSliderDragging}
           step={1}
           value={luminance}
         />
