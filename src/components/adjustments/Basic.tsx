@@ -1,13 +1,16 @@
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
+import { Pipette } from 'lucide-react';
 import Slider from '../ui/Slider';
-import { Adjustments, BasicAdjustment } from '../../utils/adjustments';
+import { Adjustments, BasicAdjustment, ColorAdjustment } from '../../utils/adjustments';
 import { useEffect, useRef, useState } from 'react';
 
 interface BasicAdjustmentsProps {
   adjustments: Adjustments;
   setAdjustments(adjustments: Partial<Adjustments>): any;
   isForMask?: boolean;
+  isWbPickerActive?: boolean;
+  toggleWbPicker?: () => void;
   onDragStateChange?: (isDragging: boolean) => void;
 }
 
@@ -19,58 +22,44 @@ const toneMapperOptions = [
 interface ToneMapperSwitchProps {
   selectedMapper: string;
   onMapperChange: (mapper: string) => void;
-  exposureValue: number;
-  onExposureChange: (value: number) => void;
-  onDragStateChange?: (isDragging: boolean) => void;
 }
 
-const ToneMapperSwitch = ({
-  selectedMapper,
-  onMapperChange,
-  exposureValue,
-  onExposureChange,
-  onDragStateChange,
-}: ToneMapperSwitchProps) => {
+const ToneMapperSwitch = ({ selectedMapper, onMapperChange }: ToneMapperSwitchProps) => {
+  const [buttonRefs, setButtonRefs] = useState<Map<string, HTMLButtonElement>>(new Map());
   const [bubbleStyle, setBubbleStyle] = useState({});
+  const containerRef = useRef<HTMLDivElement>(null);
   const isInitialAnimation = useRef(true);
   const [isLabelHovered, setIsLabelHovered] = useState(false);
 
   const handleReset = () => {
-    onMapperChange('basic');
-    onExposureChange(0);
+    onMapperChange('agx');
   };
 
   useEffect(() => {
-    const selectedIndex = toneMapperOptions.findIndex((m) => m.id === selectedMapper);
-    const safeIndex = selectedIndex >= 0 ? selectedIndex : 0;
+    const selectedButton = buttonRefs.get(selectedMapper);
 
-    const widthPercent = 100 / toneMapperOptions.length;
-    const targetX = `${safeIndex * 100}%`;
-    const targetWidth = `${widthPercent}%`;
+    if (selectedButton && containerRef.current) {
+      const targetStyle = {
+        x: selectedButton.offsetLeft,
+        width: selectedButton.offsetWidth,
+      };
 
-    if (isInitialAnimation.current) {
-      let initialX;
-      if (selectedMapper === 'agx') {
-        initialX = `${toneMapperOptions.length * 100}%`;
+      if (isInitialAnimation.current && containerRef.current.offsetWidth > 0) {
+        const initialX = selectedMapper === 'agx' ? containerRef.current.offsetWidth : -targetStyle.width;
+
+        setBubbleStyle({
+          x: [initialX, targetStyle.x],
+          width: targetStyle.width,
+        });
+        isInitialAnimation.current = false;
       } else {
-        initialX = '-25%';
+        setBubbleStyle(targetStyle);
       }
-
-      setBubbleStyle({
-        x: [initialX, targetX],
-        width: targetWidth,
-      });
-      isInitialAnimation.current = false;
-    } else {
-      setBubbleStyle({
-        x: targetX,
-        width: targetWidth,
-      });
     }
-  }, [selectedMapper]);
+  }, [selectedMapper, buttonRefs]);
 
   return (
-    <div className="group">
+    <div className="group mb-2">
       <div className="flex justify-between items-center mb-2">
         <div
           className="grid cursor-pointer"
@@ -97,8 +86,8 @@ const ToneMapperSwitch = ({
           </span>
         </div>
       </div>
-      <div className="w-full p-2 pb-1 bg-card-active rounded-md">
-        <div className="relative flex w-full">
+      <div className="w-full p-2 bg-card-active rounded-md">
+        <div ref={containerRef} className="relative flex w-full">
           <motion.div
             className="absolute top-0 bottom-0 z-0 bg-accent"
             style={{ borderRadius: 6 }}
@@ -109,6 +98,15 @@ const ToneMapperSwitch = ({
             <button
               key={mapper.id}
               data-tooltip={mapper.title}
+              ref={(el) => {
+                if (el) {
+                  const newRefs = new Map(buttonRefs);
+                  if (newRefs.get(mapper.id) !== el) {
+                    newRefs.set(mapper.id, el);
+                    setButtonRefs(newRefs);
+                  }
+                }
+              }}
               onClick={() => onMapperChange(mapper.id)}
               className={clsx(
                 'relative flex-1 flex items-center justify-center gap-2 px-3 p-1.5 text-sm font-medium rounded-md transition-colors',
@@ -123,18 +121,6 @@ const ToneMapperSwitch = ({
             </button>
           ))}
         </div>
-        <div className="mt-2.5 px-1">
-          <Slider
-            label="Exposure"
-            max={5}
-            min={-5}
-            onChange={(e: any) => onExposureChange(parseFloat(e.target.value))}
-            step={0.01}
-            value={exposureValue}
-            trackClassName="bg-surface"
-            onDragStateChange={onDragStateChange}
-          />
-        </div>
       </div>
     </div>
   );
@@ -144,9 +130,11 @@ export default function BasicAdjustments({
   adjustments,
   setAdjustments,
   isForMask = false,
+  isWbPickerActive = false,
+  toggleWbPicker,
   onDragStateChange,
 }: BasicAdjustmentsProps) {
-  const handleAdjustmentChange = (key: BasicAdjustment, value: any) => {
+  const handleAdjustmentChange = (key: BasicAdjustment | ColorAdjustment, value: any) => {
     const numericValue = parseFloat(value);
     setAdjustments((prev: Partial<Adjustments>) => ({ ...prev, [key]: numericValue }));
   };
@@ -160,80 +148,57 @@ export default function BasicAdjustments({
 
   return (
     <div>
-      <Slider
-        label="Brightness"
-        max={5}
-        min={-5}
-        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Brightness, e.target.value)}
-        step={0.01}
-        value={adjustments.brightness}
-        onDragStateChange={onDragStateChange}
-      />
-      <Slider
-        label="Contrast"
-        max={100}
-        min={-100}
-        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Contrast, e.target.value)}
-        step={1}
-        value={adjustments.contrast}
-        onDragStateChange={onDragStateChange}
-      />
-      <Slider
-        label="Highlights"
-        max={100}
-        min={-100}
-        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Highlights, e.target.value)}
-        step={1}
-        value={adjustments.highlights}
-        onDragStateChange={onDragStateChange}
-      />
-      <Slider
-        label="Shadows"
-        max={100}
-        min={-100}
-        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Shadows, e.target.value)}
-        step={1}
-        value={adjustments.shadows}
-        onDragStateChange={onDragStateChange}
-      />
-      <Slider
-        label="Whites"
-        max={100}
-        min={-100}
-        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Whites, e.target.value)}
-        step={1}
-        value={adjustments.whites}
-        onDragStateChange={onDragStateChange}
-      />
-      <Slider
-        label="Blacks"
-        max={100}
-        min={-100}
-        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Blacks, e.target.value)}
-        step={1}
-        value={adjustments.blacks}
-        onDragStateChange={onDragStateChange}
-      />
-
-      {isForMask ? (
-        <Slider
-          label="Exposure"
-          max={5}
-          min={-5}
-          onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Exposure, e.target.value)}
-          step={0.01}
-          value={adjustments.exposure}
-          onDragStateChange={onDragStateChange}
-        />
-      ) : (
+      {!isForMask && (
         <ToneMapperSwitch
           selectedMapper={adjustments.toneMapper || 'agx'}
           onMapperChange={handleToneMapperChange}
-          exposureValue={adjustments.exposure}
-          onExposureChange={(value) => handleAdjustmentChange(BasicAdjustment.Exposure, value)}
-          onDragStateChange={onDragStateChange}
         />
       )}
+
+      <Slider
+        label="Exposure"
+        max={5}
+        min={-5}
+        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Exposure, e.target.value)}
+        step={0.01}
+        value={adjustments.exposure}
+        onDragStateChange={onDragStateChange}
+      />
+
+      <div className="mt-4 p-2 bg-bg-tertiary rounded-md">
+        <div className="flex justify-between items-center mb-2">
+          <p className="text-md font-semibold text-primary">White Balance</p>
+          {!isForMask && toggleWbPicker && (
+            <button
+              onClick={toggleWbPicker}
+              className={`p-1.5 rounded-md transition-colors ${
+                isWbPickerActive ? 'bg-accent text-button-text' : 'hover:bg-bg-secondary text-text-secondary'
+              }`}
+              data-tooltip="White Balance Picker"
+            >
+              <Pipette size={16} />
+            </button>
+          )}
+        </div>
+        <Slider
+          label="Temperature"
+          max={100}
+          min={-100}
+          onChange={(e: any) => handleAdjustmentChange(ColorAdjustment.Temperature, e.target.value)}
+          step={1}
+          value={adjustments.temperature || 0}
+          onDragStateChange={onDragStateChange}
+        />
+        <Slider
+          label="Tint"
+          max={100}
+          min={-100}
+          onChange={(e: any) => handleAdjustmentChange(ColorAdjustment.Tint, e.target.value)}
+          step={1}
+          value={adjustments.tint || 0}
+          onDragStateChange={onDragStateChange}
+        />
+      </div>
     </div>
   );
 }
