@@ -1,6 +1,7 @@
 import { RotateCcw, Copy, ClipboardPaste, Aperture } from 'lucide-react';
 import BasicAdjustments from '../../adjustments/Basic';
-import CurveGraph from '../../adjustments/Curves';
+import TonePanel from '../../adjustments/Tone';
+import PresencePanel from '../../adjustments/Presence';
 import ColorPanel from '../../adjustments/Color';
 import DetailsPanel from '../../adjustments/Details';
 import EffectsPanel from '../../adjustments/Effects';
@@ -54,6 +55,14 @@ export default function Controls({
   onDragStateChange,
 }: ControlsProps) {
   const { showContextMenu } = useContextMenu();
+  const sectionOrder = [
+    { key: 'base', title: 'Base', component: BasicAdjustments },
+    { key: 'tone', title: 'Tone', component: TonePanel },
+    { key: 'presence', title: 'Presence', component: PresencePanel },
+    { key: 'color', title: 'Color', component: ColorPanel },
+    { key: 'detail', title: 'Detail', component: DetailsPanel },
+    { key: 'effects', title: 'Effects', component: EffectsPanel },
+  ];
 
   const handleToggleVisibility = (sectionName: string) => {
     setAdjustments((prev: Adjustments) => {
@@ -182,16 +191,7 @@ export default function Controls({
         </div>
       </div>
       <div className="flex-grow overflow-y-auto p-4 flex flex-col gap-2">
-        {Object.keys(ADJUSTMENT_SECTIONS).map((sectionName: string) => {
-          const SectionComponent: any = {
-            basic: BasicAdjustments,
-            curves: CurveGraph,
-            color: ColorPanel,
-            details: DetailsPanel,
-            effects: EffectsPanel,
-          }[sectionName];
-
-          const title = sectionName.charAt(0).toUpperCase() + sectionName.slice(1);
+        {sectionOrder.map(({ key: sectionName, title, component: SectionComponent }) => {
           const sectionVisibility = adjustments.sectionVisibility || INITIAL_ADJUSTMENTS.sectionVisibility;
 
           return (

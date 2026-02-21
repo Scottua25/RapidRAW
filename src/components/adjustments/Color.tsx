@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Pipette } from 'lucide-react';
 import Slider from '../ui/Slider';
 import ColorWheel from '../ui/ColorWheel';
 import {
@@ -21,8 +20,6 @@ interface ColorPanelProps {
   setAdjustments(adjustments: Partial<Adjustments>): any;
   appSettings: AppSettings | null;
   isForMask?: boolean;
-  isWbPickerActive?: boolean;
-  toggleWbPicker?: () => void;
   onDragStateChange?: (isDragging: boolean) => void;
 }
 
@@ -293,8 +290,6 @@ export default function ColorPanel({
   setAdjustments,
   appSettings,
   isForMask = false,
-  isWbPickerActive = false,
-  toggleWbPicker,
   onDragStateChange,
 }: ColorPanelProps) {
   const [activeColor, setActiveColor] = useState('reds');
@@ -322,44 +317,7 @@ export default function ColorPanel({
   return (
     <div>
       <div className="mb-4 p-2 bg-bg-tertiary rounded-md">
-        <div className="flex justify-between items-center mb-2">
-          <p className="text-md font-semibold text-primary">White Balance</p>
-          {!isForMask && toggleWbPicker && (
-            <button
-              onClick={toggleWbPicker}
-              className={`p-1.5 rounded-md transition-colors ${
-                isWbPickerActive
-                  ? 'bg-accent text-button-text'
-                  : 'hover:bg-bg-secondary text-text-secondary'
-              }`}
-              data-tooltip="White Balance Picker"
-            >
-              <Pipette size={16} />
-            </button>
-          )}
-        </div>
-        <Slider
-          label="Temperature"
-          max={100}
-          min={-100}
-          onChange={(e: any) => handleGlobalChange(ColorAdjustment.Temperature, e.target.value)}
-          step={1}
-          value={adjustments.temperature || 0}
-          onDragStateChange={onDragStateChange}
-        />
-        <Slider
-          label="Tint"
-          max={100}
-          min={-100}
-          onChange={(e: any) => handleGlobalChange(ColorAdjustment.Tint, e.target.value)}
-          step={1}
-          value={adjustments.tint || 0}
-          onDragStateChange={onDragStateChange}
-        />
-      </div>
-
-      <div className="mb-4 p-2 bg-bg-tertiary rounded-md">
-        <p className="text-md font-semibold mb-2 text-primary">Presence</p>
+        <p className="text-md font-semibold mb-2 text-primary">Global Color</p>
         <Slider
           label="Vibrance"
           max={100}

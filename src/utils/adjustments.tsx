@@ -302,19 +302,21 @@ export interface MaskContainer {
 
 export interface Sections {
   [index: string]: Array<string>;
-  basic: Array<string>;
-  curves: Array<string>;
+  base: Array<string>;
+  tone: Array<string>;
+  presence: Array<string>;
   color: Array<string>;
-  details: Array<string>;
+  detail: Array<string>;
   effects: Array<string>;
 }
 
 export interface SectionVisibility {
   [index: string]: boolean;
-  basic: boolean;
-  curves: boolean;
+  base: boolean;
+  tone: boolean;
+  presence: boolean;
   color: boolean;
-  details: boolean;
+  detail: boolean;
   effects: boolean;
 }
 
@@ -388,10 +390,11 @@ export const INITIAL_MASK_ADJUSTMENTS: MaskAdjustments = {
   lumaNoiseReduction: 0,
   saturation: 0,
   sectionVisibility: {
-    basic: true,
-    curves: true,
+    base: true,
+    tone: true,
+    presence: true,
     color: true,
-    details: true,
+    detail: true,
     effects: true,
   },
   shadows: 0,
@@ -486,10 +489,11 @@ export const INITIAL_ADJUSTMENTS: Adjustments = {
   rotation: 0,
   saturation: 0,
   sectionVisibility: {
-    basic: true,
-    curves: true,
+    base: true,
+    tone: true,
+    presence: true,
     color: true,
-    details: true,
+    detail: true,
     effects: true,
   },
   shadows: 0,
@@ -520,6 +524,51 @@ export const normalizeLoadedAdjustments = (loadedAdjustments: Adjustments): any 
     return INITIAL_ADJUSTMENTS;
   }
 
+  const normalizeSectionVisibility = (
+    sectionVisibility: any,
+    defaults: SectionVisibility,
+  ): SectionVisibility => {
+    const legacyBasic = sectionVisibility?.basic;
+    const legacyCurves = sectionVisibility?.curves;
+    const legacyDetails = sectionVisibility?.details;
+
+    let toneFallback = defaults.tone;
+    if (typeof legacyBasic === 'boolean' || typeof legacyCurves === 'boolean') {
+      toneFallback = !!legacyBasic || !!legacyCurves;
+    }
+
+    return {
+      base:
+        typeof sectionVisibility?.base === 'boolean'
+          ? sectionVisibility.base
+          : typeof legacyBasic === 'boolean'
+            ? legacyBasic
+            : defaults.base,
+      tone:
+        typeof sectionVisibility?.tone === 'boolean' ? sectionVisibility.tone : toneFallback,
+      presence:
+        typeof sectionVisibility?.presence === 'boolean'
+          ? sectionVisibility.presence
+          : typeof legacyDetails === 'boolean'
+            ? legacyDetails
+            : defaults.presence,
+      color:
+        typeof sectionVisibility?.color === 'boolean'
+          ? sectionVisibility.color
+          : defaults.color,
+      detail:
+        typeof sectionVisibility?.detail === 'boolean'
+          ? sectionVisibility.detail
+          : typeof legacyDetails === 'boolean'
+            ? legacyDetails
+            : defaults.detail,
+      effects:
+        typeof sectionVisibility?.effects === 'boolean'
+          ? sectionVisibility.effects
+          : defaults.effects,
+    };
+  };
+
   const normalizeSubMasks = (subMasks: any[]) => {
     return (subMasks || []).map((subMask: Partial<SubMask>) => ({
       visible: true,
@@ -547,10 +596,10 @@ export const normalizeLoadedAdjustments = (loadedAdjustments: Adjustments): any 
         colorGrading: { ...INITIAL_MASK_ADJUSTMENTS.colorGrading, ...(containerAdjustments.colorGrading || {}) },
         hsl: { ...INITIAL_MASK_ADJUSTMENTS.hsl, ...(containerAdjustments.hsl || {}) },
         curves: { ...INITIAL_MASK_ADJUSTMENTS.curves, ...(containerAdjustments.curves || {}) },
-        sectionVisibility: {
-          ...INITIAL_MASK_ADJUSTMENTS.sectionVisibility,
-          ...(containerAdjustments.sectionVisibility || {}),
-        },
+        sectionVisibility: normalizeSectionVisibility(
+          containerAdjustments.sectionVisibility,
+          INITIAL_MASK_ADJUSTMENTS.sectionVisibility,
+        ),
       },
       subMasks: normalizedSubMasks,
     };
@@ -592,10 +641,10 @@ export const normalizeLoadedAdjustments = (loadedAdjustments: Adjustments): any 
     curves: { ...INITIAL_ADJUSTMENTS.curves, ...(loadedAdjustments.curves || {}) },
     masks: normalizedMasks,
     aiPatches: normalizedAiPatches,
-    sectionVisibility: {
-      ...INITIAL_ADJUSTMENTS.sectionVisibility,
-      ...(loadedAdjustments.sectionVisibility || {}),
-    },
+    sectionVisibility: normalizeSectionVisibility(
+      loadedAdjustments.sectionVisibility,
+      INITIAL_ADJUSTMENTS.sectionVisibility,
+    ),
   };
 };
 
@@ -644,31 +693,35 @@ export const COPYABLE_ADJUSTMENT_KEYS: Array<string> = [
 ];
 
 export const ADJUSTMENT_SECTIONS: Sections = {
-  basic: [
+  base: [
+    BasicAdjustment.Exposure,
+    ColorAdjustment.Temperature,
+    ColorAdjustment.Tint,
+    'toneMapper',
+  ],
+  tone: [
     BasicAdjustment.Brightness,
     BasicAdjustment.Contrast,
     BasicAdjustment.Highlights,
     BasicAdjustment.Shadows,
     BasicAdjustment.Whites,
     BasicAdjustment.Blacks,
-    BasicAdjustment.Exposure,
-    'toneMapper',
+    'curves',
   ],
-  curves: ['curves'],
+  presence: [
+    DetailsAdjustment.Clarity,
+    DetailsAdjustment.Dehaze,
+    DetailsAdjustment.Structure,
+    DetailsAdjustment.Centré,
+  ],
   color: [
     ColorAdjustment.Saturation,
-    ColorAdjustment.Temperature,
-    ColorAdjustment.Tint,
     ColorAdjustment.Vibrance,
     ColorAdjustment.Hsl,
     ColorAdjustment.ColorGrading,
     'colorCalibration',
   ],
-  details: [
-    DetailsAdjustment.Clarity,
-    DetailsAdjustment.Dehaze,
-    DetailsAdjustment.Structure,
-    DetailsAdjustment.Centré,
+  detail: [
     DetailsAdjustment.Sharpness,
     DetailsAdjustment.LumaNoiseReduction,
     DetailsAdjustment.ColorNoiseReduction,
