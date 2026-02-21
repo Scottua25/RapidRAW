@@ -37,7 +37,8 @@ import CollapsibleSection from '../../ui/CollapsibleSection';
 import Switch from '../../ui/Switch';
 import Slider from '../../ui/Slider';
 import BasicAdjustments from '../../adjustments/Basic';
-import CurveGraph from '../../adjustments/Curves';
+import TonePanel from '../../adjustments/Tone';
+import PresencePanel from '../../adjustments/Presence';
 import ColorPanel from '../../adjustments/Color';
 import DetailsPanel from '../../adjustments/Details';
 import EffectsPanel from '../../adjustments/Effects';
@@ -231,10 +232,11 @@ export default function MasksPanel({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [tempName, setTempName] = useState('');
   const [collapsibleState, setCollapsibleState] = useState<any>({
-    basic: true,
-    curves: false,
+    base: true,
+    tone: false,
+    presence: false,
     color: false,
-    details: false,
+    detail: false,
     effects: false,
   });
   const [copiedSectionAdjustments, setCopiedSectionAdjustments] = useState<any | null>(null);
@@ -1611,6 +1613,14 @@ function SettingsPanel({
 
   const sectionVisibility =
     displayContainer.adjustments.sectionVisibility || INITIAL_MASK_ADJUSTMENTS.sectionVisibility;
+  const sectionOrder = [
+    { key: 'base', title: 'Base', component: BasicAdjustments },
+    { key: 'tone', title: 'Tone', component: TonePanel },
+    { key: 'presence', title: 'Presence', component: PresencePanel },
+    { key: 'color', title: 'Color', component: ColorPanel },
+    { key: 'detail', title: 'Detail', component: DetailsPanel },
+    { key: 'effects', title: 'Effects', component: EffectsPanel },
+  ];
 
   return (
     <div
@@ -1698,15 +1708,7 @@ function SettingsPanel({
         onMouseLeave={() => setIsMaskControlHovered(false)}
         className="flex flex-col gap-2"
       >
-        {Object.keys(ADJUSTMENT_SECTIONS).map((sectionName) => {
-          const SectionComponent: any = {
-            basic: BasicAdjustments,
-            curves: CurveGraph,
-            color: ColorPanel,
-            details: DetailsPanel,
-            effects: EffectsPanel,
-          }[sectionName];
-          const title = sectionName.charAt(0).toUpperCase() + sectionName.slice(1);
+        {sectionOrder.map(({ key: sectionName, title, component: SectionComponent }) => {
           return (
             <CollapsibleSection
               key={sectionName}

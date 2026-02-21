@@ -1425,13 +1425,38 @@ fn get_global_adjustments_from_json(
     is_raw: bool,
 ) -> GlobalAdjustments {
     let visibility = js_adjustments.get("sectionVisibility");
-    let is_visible = |section: &str| -> bool {
+    let get_visibility = |key: &str| -> Option<bool> {
         visibility
-            .and_then(|v| v.get(section))
+            .and_then(|v| v.get(key))
             .and_then(|s| s.as_bool())
-            .unwrap_or(true)
     };
-
+    let is_visible = |section: &str| -> bool {
+        match section {
+            "base" => get_visibility("base")
+                .or_else(|| get_visibility("basic"))
+                .unwrap_or(true),
+            "tone" => {
+                if let Some(tone) = get_visibility("tone") {
+                    tone
+                } else {
+                    let legacy_basic = get_visibility("basic");
+                    let legacy_curves = get_visibility("curves");
+                    if legacy_basic.is_none() && legacy_curves.is_none() {
+                        true
+                    } else {
+                        legacy_basic.unwrap_or(false) || legacy_curves.unwrap_or(false)
+                    }
+                }
+            }
+            "presence" => get_visibility("presence")
+                .or_else(|| get_visibility("details"))
+                .unwrap_or(true),
+            "detail" => get_visibility("detail")
+                .or_else(|| get_visibility("details"))
+                .unwrap_or(true),
+            _ => get_visibility(section).unwrap_or(true),
+        }
+    };
     let get_val = |section: &str, key: &str, scale: f32, default: Option<f64>| -> f32 {
         if is_visible(section) {
             js_adjustments[key]
@@ -1448,22 +1473,22 @@ fn get_global_adjustments_from_json(
     };
 
     let curves_obj = js_adjustments.get("curves").cloned().unwrap_or_default();
-    let luma_points: Vec<serde_json::Value> = if is_visible("curves") {
+    let luma_points: Vec<serde_json::Value> = if is_visible("tone") {
         curves_obj["luma"].as_array().cloned().unwrap_or_default()
     } else {
         Vec::new()
     };
-    let red_points: Vec<serde_json::Value> = if is_visible("curves") {
+    let red_points: Vec<serde_json::Value> = if is_visible("tone") {
         curves_obj["red"].as_array().cloned().unwrap_or_default()
     } else {
         Vec::new()
     };
-    let green_points: Vec<serde_json::Value> = if is_visible("curves") {
+    let green_points: Vec<serde_json::Value> = if is_visible("tone") {
         curves_obj["green"].as_array().cloned().unwrap_or_default()
     } else {
         Vec::new()
     };
-    let blue_points: Vec<serde_json::Value> = if is_visible("curves") {
+    let blue_points: Vec<serde_json::Value> = if is_visible("tone") {
         curves_obj["blue"].as_array().cloned().unwrap_or_default()
     } else {
         Vec::new()
@@ -1505,37 +1530,37 @@ fn get_global_adjustments_from_json(
     let (pipe_to_rendering, rendering_to_pipe) = calculate_agx_matrices();
 
     GlobalAdjustments {
-        exposure: get_val("basic", "exposure", SCALES.exposure, None),
-        brightness: get_val("basic", "brightness", SCALES.brightness, None),
-        contrast: get_val("basic", "contrast", SCALES.contrast, None),
-        highlights: get_val("basic", "highlights", SCALES.highlights, None),
-        shadows: get_val("basic", "shadows", SCALES.shadows, None),
-        whites: get_val("basic", "whites", SCALES.whites, None),
-        blacks: get_val("basic", "blacks", SCALES.blacks, None),
+        exposure: get_val("base", "exposure", SCALES.exposure, None),
+        brightness: get_val("tone", "brightness", SCALES.brightness, None),
+        contrast: get_val("tone", "contrast", SCALES.contrast, None),
+        highlights: get_val("tone", "highlights", SCALES.highlights, None),
+        shadows: get_val("tone", "shadows", SCALES.shadows, None),
+        whites: get_val("tone", "whites", SCALES.whites, None),
+        blacks: get_val("tone", "blacks", SCALES.blacks, None),
 
         saturation: get_val("color", "saturation", SCALES.saturation, None),
-        temperature: get_val("color", "temperature", SCALES.temperature, None),
-        tint: get_val("color", "tint", SCALES.tint, None),
+        temperature: get_val("base", "temperature", SCALES.temperature, None),
+        tint: get_val("base", "tint", SCALES.tint, None),
         vibrance: get_val("color", "vibrance", SCALES.vibrance, None),
 
-        sharpness: get_val("details", "sharpness", SCALES.sharpness, None),
+        sharpness: get_val("detail", "sharpness", SCALES.sharpness, None),
         luma_noise_reduction: get_val(
-            "details",
+            "detail",
             "lumaNoiseReduction",
             SCALES.luma_noise_reduction,
             None,
         ),
         color_noise_reduction: get_val(
-            "details",
+            "detail",
             "colorNoiseReduction",
             SCALES.color_noise_reduction,
             None,
         ),
 
-        clarity: get_val("effects", "clarity", SCALES.clarity, None),
-        dehaze: get_val("effects", "dehaze", SCALES.dehaze, None),
-        structure: get_val("effects", "structure", SCALES.structure, None),
-        centré: get_val("effects", "centré", SCALES.centré, None),
+        clarity: get_val("presence", "clarity", SCALES.clarity, None),
+        dehaze: get_val("presence", "dehaze", SCALES.dehaze, None),
+        structure: get_val("presence", "structure", SCALES.structure, None),
+        centré: get_val("presence", "centré", SCALES.centré, None),
         vignette_amount: get_val("effects", "vignetteAmount", SCALES.vignette_amount, None),
         vignette_midpoint: get_val(
             "effects",
@@ -1565,13 +1590,13 @@ fn get_global_adjustments_from_json(
         ),
 
         chromatic_aberration_red_cyan: get_val(
-            "details",
+            "detail",
             "chromaticAberrationRedCyan",
             SCALES.chromatic_aberration,
             None,
         ),
         chromatic_aberration_blue_yellow: get_val(
-            "details",
+            "detail",
             "chromaticAberrationBlueYellow",
             SCALES.chromatic_aberration,
             None,
@@ -1668,13 +1693,38 @@ fn get_mask_adjustments_from_json(adj: &serde_json::Value) -> MaskAdjustments {
     }
 
     let visibility = adj.get("sectionVisibility");
-    let is_visible = |section: &str| -> bool {
+    let get_visibility = |key: &str| -> Option<bool> {
         visibility
-            .and_then(|v| v.get(section))
+            .and_then(|v| v.get(key))
             .and_then(|s| s.as_bool())
-            .unwrap_or(true)
     };
-
+    let is_visible = |section: &str| -> bool {
+        match section {
+            "base" => get_visibility("base")
+                .or_else(|| get_visibility("basic"))
+                .unwrap_or(true),
+            "tone" => {
+                if let Some(tone) = get_visibility("tone") {
+                    tone
+                } else {
+                    let legacy_basic = get_visibility("basic");
+                    let legacy_curves = get_visibility("curves");
+                    if legacy_basic.is_none() && legacy_curves.is_none() {
+                        true
+                    } else {
+                        legacy_basic.unwrap_or(false) || legacy_curves.unwrap_or(false)
+                    }
+                }
+            }
+            "presence" => get_visibility("presence")
+                .or_else(|| get_visibility("details"))
+                .unwrap_or(true),
+            "detail" => get_visibility("detail")
+                .or_else(|| get_visibility("details"))
+                .unwrap_or(true),
+            _ => get_visibility(section).unwrap_or(true),
+        }
+    };
     let get_val = |section: &str, key: &str, scale: f32| -> f32 {
         if is_visible(section) {
             adj[key].as_f64().unwrap_or(0.0) as f32 / scale
@@ -1684,22 +1734,22 @@ fn get_mask_adjustments_from_json(adj: &serde_json::Value) -> MaskAdjustments {
     };
 
     let curves_obj = adj.get("curves").cloned().unwrap_or_default();
-    let luma_points: Vec<serde_json::Value> = if is_visible("curves") {
+    let luma_points: Vec<serde_json::Value> = if is_visible("tone") {
         curves_obj["luma"].as_array().cloned().unwrap_or_default()
     } else {
         Vec::new()
     };
-    let red_points: Vec<serde_json::Value> = if is_visible("curves") {
+    let red_points: Vec<serde_json::Value> = if is_visible("tone") {
         curves_obj["red"].as_array().cloned().unwrap_or_default()
     } else {
         Vec::new()
     };
-    let green_points: Vec<serde_json::Value> = if is_visible("curves") {
+    let green_points: Vec<serde_json::Value> = if is_visible("tone") {
         curves_obj["green"].as_array().cloned().unwrap_or_default()
     } else {
         Vec::new()
     };
-    let blue_points: Vec<serde_json::Value> = if is_visible("curves") {
+    let blue_points: Vec<serde_json::Value> = if is_visible("tone") {
         curves_obj["blue"].as_array().cloned().unwrap_or_default()
     } else {
         Vec::new()
@@ -1707,30 +1757,30 @@ fn get_mask_adjustments_from_json(adj: &serde_json::Value) -> MaskAdjustments {
     let cg_obj = adj.get("colorGrading").cloned().unwrap_or_default();
 
     MaskAdjustments {
-        exposure: get_val("basic", "exposure", SCALES.exposure),
-        brightness: get_val("basic", "brightness", SCALES.brightness),
-        contrast: get_val("basic", "contrast", SCALES.contrast),
-        highlights: get_val("basic", "highlights", SCALES.highlights),
-        shadows: get_val("basic", "shadows", SCALES.shadows),
-        whites: get_val("basic", "whites", SCALES.whites),
-        blacks: get_val("basic", "blacks", SCALES.blacks),
+        exposure: get_val("base", "exposure", SCALES.exposure),
+        brightness: get_val("tone", "brightness", SCALES.brightness),
+        contrast: get_val("tone", "contrast", SCALES.contrast),
+        highlights: get_val("tone", "highlights", SCALES.highlights),
+        shadows: get_val("tone", "shadows", SCALES.shadows),
+        whites: get_val("tone", "whites", SCALES.whites),
+        blacks: get_val("tone", "blacks", SCALES.blacks),
 
         saturation: get_val("color", "saturation", SCALES.saturation),
-        temperature: get_val("color", "temperature", SCALES.temperature),
-        tint: get_val("color", "tint", SCALES.tint),
+        temperature: get_val("base", "temperature", SCALES.temperature),
+        tint: get_val("base", "tint", SCALES.tint),
         vibrance: get_val("color", "vibrance", SCALES.vibrance),
 
-        sharpness: get_val("details", "sharpness", SCALES.sharpness),
-        luma_noise_reduction: get_val("details", "lumaNoiseReduction", SCALES.luma_noise_reduction),
+        sharpness: get_val("detail", "sharpness", SCALES.sharpness),
+        luma_noise_reduction: get_val("detail", "lumaNoiseReduction", SCALES.luma_noise_reduction),
         color_noise_reduction: get_val(
-            "details",
+            "detail",
             "colorNoiseReduction",
             SCALES.color_noise_reduction,
         ),
 
-        clarity: get_val("effects", "clarity", SCALES.clarity),
-        dehaze: get_val("effects", "dehaze", SCALES.dehaze),
-        structure: get_val("effects", "structure", SCALES.structure),
+        clarity: get_val("presence", "clarity", SCALES.clarity),
+        dehaze: get_val("presence", "dehaze", SCALES.dehaze),
+        structure: get_val("presence", "structure", SCALES.structure),
 
         glow_amount: get_val("effects", "glowAmount", SCALES.glow),
         halation_amount: get_val("effects", "halationAmount", SCALES.halation),
@@ -2680,7 +2730,9 @@ pub fn auto_results_to_json(results: &AutoAdjustmentResults) -> serde_json::Valu
         //"tint": results.tint,
         "dehaze": results.dehaze,
         "sectionVisibility": {
-            "basic": true,
+            "base": true,
+            "tone": true,
+            "presence": true,
             "color": true,
             "effects": true
         }
@@ -2704,3 +2756,5 @@ pub fn calculate_auto_adjustments(
 
     Ok(auto_results_to_json(&results))
 }
+
+

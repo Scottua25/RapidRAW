@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { Pipette } from 'lucide-react';
 import Slider from '../ui/Slider';
 import ColorWheel from '../ui/ColorWheel';
-import { ColorAdjustment, ColorCalibration, HueSatLum, INITIAL_ADJUSTMENTS } from '../../utils/adjustments';
+import {
+  ColorAdjustment,
+  ColorCalibration,
+  HueSatLum,
+  INITIAL_ADJUSTMENTS,
+} from '../../utils/adjustments';
 import { Adjustments, ColorGrading } from '../../utils/adjustments';
 import { AppSettings } from '../ui/AppProperties';
-import Text from '../ui/Text';
-import { TextColors, TextVariants, TextWeights } from '../../types/typography';
 
 interface ColorProps {
   color: string;
@@ -18,8 +20,6 @@ interface ColorPanelProps {
   setAdjustments(adjustments: Partial<Adjustments>): any;
   appSettings: AppSettings | null;
   isForMask?: boolean;
-  isWbPickerActive?: boolean;
-  toggleWbPicker?: () => void;
   onDragStateChange?: (isDragging: boolean) => void;
 }
 
@@ -233,13 +233,9 @@ const ColorCalibrationPanel = ({ adjustments, setAdjustments, onDragStateChange 
 
   return (
     <div className="p-2 bg-bg-tertiary rounded-md mt-4">
-      <Text variant={TextVariants.heading} className="mb-2">
-        Color Calibration
-      </Text>
+      <p className="text-md font-semibold mb-3 text-primary">Color Calibration</p>
       <div>
-        <Text color={TextColors.primary} weight={TextWeights.medium} className="mb-1">
-          Shadows
-        </Text>
+        <p className="text-sm font-medium mb-1 text-secondary">Shadows</p>
         <Slider
           label="Tint"
           min={-100}
@@ -252,9 +248,7 @@ const ColorCalibrationPanel = ({ adjustments, setAdjustments, onDragStateChange 
         />
       </div>
       <div className="mt-3">
-        <Text color={TextColors.primary} weight={TextWeights.medium} className="mb-3">
-          Primaries
-        </Text>
+        <p className="text-sm font-medium mb-3 text-secondary">Primaries</p>
         <div className="flex justify-center gap-6 mb-4 px-1">
           {PRIMARY_COLORS.map(({ name, color }) => (
             <ColorSwatch
@@ -296,8 +290,6 @@ export default function ColorPanel({
   setAdjustments,
   appSettings,
   isForMask = false,
-  isWbPickerActive = false,
-  toggleWbPicker,
   onDragStateChange,
 }: ColorPanelProps) {
   const [activeColor, setActiveColor] = useState('reds');
@@ -323,46 +315,9 @@ export default function ColorPanel({
   const currentHsl = adjustments?.hsl?.[activeColor] || { hue: 0, saturation: 0, luminance: 0 };
 
   return (
-    <div className="space-y-4">
-      <div className="p-2 bg-bg-tertiary rounded-md">
-        <div className="flex justify-between items-center mb-2">
-          <Text variant={TextVariants.heading}>White Balance</Text>
-          {!isForMask && toggleWbPicker && (
-            <button
-              onClick={toggleWbPicker}
-              className={`p-1.5 rounded-md transition-colors ${
-                isWbPickerActive ? 'bg-accent text-button-text' : 'hover:bg-bg-secondary text-text-secondary'
-              }`}
-              data-tooltip="White Balance Picker"
-            >
-              <Pipette size={16} />
-            </button>
-          )}
-        </div>
-        <Slider
-          label="Temperature"
-          max={100}
-          min={-100}
-          onChange={(e: any) => handleGlobalChange(ColorAdjustment.Temperature, e.target.value)}
-          step={1}
-          value={adjustments.temperature || 0}
-          onDragStateChange={onDragStateChange}
-        />
-        <Slider
-          label="Tint"
-          max={100}
-          min={-100}
-          onChange={(e: any) => handleGlobalChange(ColorAdjustment.Tint, e.target.value)}
-          step={1}
-          value={adjustments.tint || 0}
-          onDragStateChange={onDragStateChange}
-        />
-      </div>
-
-      <div className="p-2 bg-bg-tertiary rounded-md">
-        <Text variant={TextVariants.heading} className="mb-2">
-          Presence
-        </Text>
+    <div>
+      <div className="mb-4 p-2 bg-bg-tertiary rounded-md">
+        <p className="text-md font-semibold mb-2 text-primary">Global Color</p>
         <Slider
           label="Vibrance"
           max={100}
@@ -383,10 +338,8 @@ export default function ColorPanel({
         />
       </div>
 
-      <div className="p-2 bg-bg-tertiary rounded-md">
-        <Text variant={TextVariants.heading} className="mb-3">
-          Color Grading
-        </Text>
+      <div className="p-2 bg-bg-tertiary rounded-md mt-4">
+        <p className="text-md font-semibold mb-3 text-primary">Color Grading</p>
         <ColorGradingPanel
           adjustments={adjustments}
           setAdjustments={setAdjustments}
@@ -395,10 +348,8 @@ export default function ColorPanel({
         />
       </div>
 
-      <div className="p-2 bg-bg-tertiary rounded-md">
-        <Text variant={TextVariants.heading} className="mb-3">
-          Color Mixer
-        </Text>
+      <div className="p-2 bg-bg-tertiary rounded-md mt-4">
+        <p className="text-md font-semibold mb-3 text-primary">Color Mixer</p>
         <div className="flex justify-between mb-4 px-1">
           {HSL_COLORS.map(({ name, color }) => (
             <ColorSwatch
