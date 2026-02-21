@@ -127,10 +127,11 @@ import HdrModal from './components/modals/HdrModal';
 const CLERK_PUBLISHABLE_KEY = 'pk_test_YnJpZWYtc2Vhc25haWwtMTIuY2xlcmsuYWNjb3VudHMuZGV2JA'; // local dev key
 
 interface CollapsibleSectionsState {
-  basic: boolean;
+  base: boolean;
+  tone: boolean;
+  presence: boolean;
   color: boolean;
-  curves: boolean;
-  details: boolean;
+  detail: boolean;
   effects: boolean;
 }
 
@@ -399,10 +400,11 @@ function App() {
   const [initialFitScale, setInitialFitScale] = useState<number | null>(null);
   const [renderedRightPanel, setRenderedRightPanel] = useState<Panel | null>(activeRightPanel);
   const [collapsibleSectionsState, setCollapsibleSectionsState] = useState<CollapsibleSectionsState>({
-    basic: true,
+    base: true,
+    tone: false,
+    presence: false,
     color: false,
-    curves: true,
-    details: false,
+    detail: false,
     effects: false,
   });
   const [isLibraryExportPanelVisible, setIsLibraryExportPanelVisible] = useState(false);
