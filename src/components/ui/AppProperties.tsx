@@ -189,6 +189,7 @@ export interface AppSettings {
   waveformHeight?: number;
   activeWaveformChannel?: string;
   customLibraryOrders?: Record<string, string[]>;
+  folderTreeCollectionsSplitRatio?: number;
 }
 
 export interface BrushSettings {

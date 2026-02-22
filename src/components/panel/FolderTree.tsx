@@ -1,7 +1,7 @@
 import { Folder, FolderOpen, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 
 export interface FolderTree {
   children: FolderTree[];
@@ -33,6 +33,8 @@ interface FolderTreeProps {
   onActiveSectionChange(section: string | null): void;
   showImageCounts: boolean;
   isInstantTransition: boolean;
+  collectionsSplitRatio?: number;
+  onCollectionsSplitRatioChange?(ratio: number): void;
 }
 
 interface TreeNodeProps {
@@ -277,9 +279,18 @@ export default function FolderTree({
   onActiveSectionChange,
   showImageCounts,
   isInstantTransition,
+  collectionsSplitRatio = 0.72,
+  onCollectionsSplitRatioChange,
 }: FolderTreeProps) {
+  const MIN_TOP_PX = 120;
+  const MIN_BOTTOM_OPEN_PX = 72; // Collections header + one row
+  const MIN_BOTTOM_COLLAPSED_PX = 32; // Header only
+  const [topPaneRatio, setTopPaneRatio] = useState<number>(collectionsSplitRatio);
+  const topPaneRatioRef = useRef<number>(collectionsSplitRatio);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isHovering, setIsHovering] = useState(false);
+  const [isCollectionsOpen, setIsCollectionsOpen] = useState(true);
 
   const handleEmptyAreaContextMenu = (e: any) => {
     if (e.target === e.currentTarget) {
@@ -337,6 +348,68 @@ export default function FolderTree({
   const isCurrentOpen = activeSection === 'current';
 
   const hasVisiblePinnedTrees = filteredPinnedTrees && filteredPinnedTrees.length > 0;
+  const hasCollections = collections.length > 0;
+
+  const clampTopPaneRatio = useCallback(
+    (ratio: number, containerHeight: number) => {
+      if (!hasCollections || containerHeight <= 0) {
+        return 1;
+      }
+      const minBottomPx = isCollectionsOpen ? MIN_BOTTOM_OPEN_PX : MIN_BOTTOM_COLLAPSED_PX;
+      const minTopRatio = Math.min(0.95, MIN_TOP_PX / containerHeight);
+      const maxTopRatio = Math.max(minTopRatio, 1 - minBottomPx / containerHeight);
+      return Math.min(maxTopRatio, Math.max(minTopRatio, ratio));
+    },
+    [hasCollections, isCollectionsOpen],
+  );
+
+  useEffect(() => {
+    const containerHeight = splitContainerRef.current?.getBoundingClientRect().height ?? 600;
+    const nextRatio = clampTopPaneRatio(collectionsSplitRatio, containerHeight);
+    setTopPaneRatio(nextRatio);
+    topPaneRatioRef.current = nextRatio;
+  }, [collectionsSplitRatio, clampTopPaneRatio]);
+
+  useEffect(() => {
+    topPaneRatioRef.current = topPaneRatio;
+  }, [topPaneRatio]);
+
+  useEffect(() => {
+    if (!hasCollections) return;
+    const containerHeight = splitContainerRef.current?.getBoundingClientRect().height ?? 600;
+    const adjusted = clampTopPaneRatio(topPaneRatioRef.current, containerHeight);
+    if (Math.abs(adjusted - topPaneRatioRef.current) > 0.0001) {
+      setTopPaneRatio(adjusted);
+      topPaneRatioRef.current = adjusted;
+      onCollectionsSplitRatioChange?.(adjusted);
+    }
+  }, [hasCollections, isCollectionsOpen, clampTopPaneRatio, onCollectionsSplitRatioChange]);
+
+  const handleSplitterMouseDown = useCallback(
+    (event: any) => {
+      if (!hasCollections || !splitContainerRef.current) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const rect = splitContainerRef.current.getBoundingClientRect();
+      const onMouseMove = (moveEvent: MouseEvent) => {
+        const y = moveEvent.clientY - rect.top;
+        if (rect.height <= 0) return;
+        const nextRatio = clampTopPaneRatio(y / rect.height, rect.height);
+        setTopPaneRatio(nextRatio);
+      };
+
+      const onMouseUp = () => {
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+        onCollectionsSplitRatioChange?.(topPaneRatioRef.current);
+      };
+
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    },
+    [hasCollections, clampTopPaneRatio, onCollectionsSplitRatioChange],
+  );
 
   return (
     <div
@@ -399,32 +472,75 @@ export default function FolderTree({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto" onContextMenu={handleEmptyAreaContextMenu}>
-            {hasVisiblePinnedTrees && (
-              <>
-                <div>
-                  <SectionHeader
-                    title="Pinned"
-                    isOpen={isPinnedOpen}
-                    onToggle={() => onActiveSectionChange(isPinnedOpen ? null : 'pinned')}
-                  />
-                </div>
-                <AnimatePresence initial={false}>
-                  {isPinnedOpen && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2, ease: 'easeInOut' }}
-                      className="overflow-hidden"
-                    >
-                      <div className="pt-1 pb-2">
-                        {filteredPinnedTrees.map((pinnedTree) => (
+          <div className="flex-1 min-h-0 flex flex-col" ref={splitContainerRef}>
+            <div
+              className="min-h-0 overflow-y-auto custom-scrollbar"
+              style={hasCollections ? { flexBasis: `${topPaneRatio * 100}%` } : { flex: 1 }}
+              onContextMenu={handleEmptyAreaContextMenu}
+            >
+              {hasVisiblePinnedTrees && (
+                <>
+                  <div>
+                    <SectionHeader
+                      title="Pinned"
+                      isOpen={isPinnedOpen}
+                      onToggle={() => onActiveSectionChange(isPinnedOpen ? null : 'pinned')}
+                    />
+                  </div>
+                  <AnimatePresence initial={false}>
+                    {isPinnedOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2, ease: 'easeInOut' }}
+                        className="overflow-hidden"
+                      >
+                        <div className="pt-1 pb-2">
+                          {filteredPinnedTrees.map((pinnedTree) => (
+                            <TreeNode
+                              key={pinnedTree.path}
+                              expandedFolders={effectiveExpandedFolders}
+                              isExpanded={effectiveExpandedFolders.has(pinnedTree.path)}
+                              node={pinnedTree}
+                              onContextMenu={onContextMenu}
+                              onFolderSelect={onFolderSelect}
+                              onToggle={onToggleFolder}
+                              selectedPath={selectedPath}
+                              pinnedFolders={pinnedFolders}
+                              showImageCounts={showImageCounts && isHovering}
+                            />
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </>
+              )}
+
+              {filteredTree && (
+                <>
+                  <div>
+                    <SectionHeader
+                      title="Base Folder"
+                      isOpen={isCurrentOpen}
+                      onToggle={() => onActiveSectionChange(isCurrentOpen ? null : 'current')}
+                    />
+                  </div>
+                  <AnimatePresence initial={false}>
+                    {isCurrentOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2, ease: 'easeInOut' }}
+                        className="overflow-hidden"
+                      >
+                        <div className="pt-1">
                           <TreeNode
-                            key={pinnedTree.path}
                             expandedFolders={effectiveExpandedFolders}
-                            isExpanded={effectiveExpandedFolders.has(pinnedTree.path)}
-                            node={pinnedTree}
+                            isExpanded={effectiveExpandedFolders.has(filteredTree.path)}
+                            node={filteredTree}
                             onContextMenu={onContextMenu}
                             onFolderSelect={onFolderSelect}
                             onToggle={onToggleFolder}
@@ -433,13 +549,12 @@ export default function FolderTree({
                             showImageCounts={showImageCounts && isHovering}
                             isInstantTransition={isInstantTransition}
                           />
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </>
-            )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </>
+              )}
 
             {filteredTree && (
               <>
@@ -478,54 +593,82 @@ export default function FolderTree({
                 </AnimatePresence>
               </>
             )}
+              {!filteredTree && !hasVisiblePinnedTrees && isSearching && (
+                <p className="text-text-secondary text-sm p-2 text-center">No folders found.</p>
+              )}
 
-            {collections.length > 0 && (
-              <>
-                <div>
-                  <SectionHeader
-                    title="Collections"
-                    isOpen={true}
-                    onToggle={() => {}}
-                  />
+              {!tree && pinnedFolderTrees.length === 0 && !isSearching && (
+                <div className="pt-1">
+                  {isLoading ? (
+                    <p className="text-text-secondary text-sm animate-pulse p-2">Loading folder structure...</p>
+                  ) : (
+                    <p className="text-text-secondary text-sm p-2">Open a folder to see its structure.</p>
+                  )}
                 </div>
-                <div className="pt-1 pb-2">
-                  {collections.map((collection) => (
-                    <div
-                      key={collection.name}
-                      className={clsx('flex items-center gap-2 p-1.5 rounded-md transition-colors cursor-pointer', {
-                        'bg-surface': selectedCollectionName === collection.name,
-                        'hover:bg-card-active': selectedCollectionName !== collection.name,
-                      })}
-                      onClick={() => onCollectionSelect?.(collection.name)}
-                      onContextMenu={(e: any) => onCollectionContextMenu?.(e, collection.name)}
-                    >
-                      <Folder size={16} className={selectedCollectionName === collection.name ? 'text-primary' : 'text-text-secondary'} />
-                      <span
-                        className={clsx('truncate select-none cursor-pointer flex-1 font-medium', {
-                          'text-primary': selectedCollectionName === collection.name,
-                          'text-text-primary': selectedCollectionName !== collection.name,
-                        })}
+              )}
+            </div>
+
+            {hasCollections && (
+              <>
+                <div
+                  className="h-2 my-1 rounded-sm bg-surface hover:bg-card-active cursor-row-resize transition-colors"
+                  onMouseDown={handleSplitterMouseDown}
+                  data-tooltip="Resize Base Folder / Collections"
+                />
+                <div
+                  className="min-h-0 overflow-y-auto custom-scrollbar"
+                  style={{ flexBasis: `${(1 - topPaneRatio) * 100}%` }}
+                >
+                  <div>
+                    <SectionHeader
+                      title="Collections"
+                      isOpen={isCollectionsOpen}
+                      onToggle={() => setIsCollectionsOpen((prev) => !prev)}
+                    />
+                  </div>
+                  <AnimatePresence initial={false}>
+                    {isCollectionsOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2, ease: 'easeInOut' }}
+                        className="overflow-hidden"
                       >
-                        {collection.name}
-                      </span>
-                    </div>
-                  ))}
+                        <div className="pt-1 pb-2">
+                          {collections.map((collection) => (
+                            <div
+                              key={collection.name}
+                              className={clsx(
+                                'text-sm flex items-center gap-2 p-1.5 rounded-md transition-colors cursor-pointer',
+                                {
+                                  'bg-surface': selectedCollectionName === collection.name,
+                                  'hover:bg-card-active': selectedCollectionName !== collection.name,
+                                },
+                              )}
+                              onClick={() => onCollectionSelect?.(collection.name)}
+                              onContextMenu={(e: any) => onCollectionContextMenu?.(e, collection.name)}
+                            >
+                              <Folder
+                                size={16}
+                                className={selectedCollectionName === collection.name ? 'text-primary' : 'text-text-secondary'}
+                              />
+                              <span
+                                className={clsx('truncate select-none cursor-pointer flex-1 font-medium', {
+                                  'text-primary': selectedCollectionName === collection.name,
+                                  'text-text-primary': selectedCollectionName !== collection.name,
+                                })}
+                              >
+                                {collection.name}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </>
-            )}
-
-            {!filteredTree && !hasVisiblePinnedTrees && isSearching && (
-              <p className="text-text-secondary text-sm p-2 text-center">No folders found.</p>
-            )}
-
-            {!tree && pinnedFolderTrees.length === 0 && !isSearching && (
-              <div className="pt-1">
-                {isLoading ? (
-                  <p className="text-text-secondary text-sm animate-pulse p-2">Loading folder structure...</p>
-                ) : (
-                  <p className="text-text-secondary text-sm p-2">Open a folder to see its structure.</p>
-                )}
-              </div>
             )}
           </div>
         </div>
