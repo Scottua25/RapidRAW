@@ -254,7 +254,7 @@ RapidRAW is still in active development and isn't yet as polished as mature tool
       <h4>Library & Workflow</h4>
       <ul>
         <li><strong>Image Library:</strong> Effortlessly manage and cull your entire photo collection for a streamlined and efficient workflow.</li>
-        <li><strong>Organization:</strong> Recursive folder view, virtual copies, color labels, star ratings, tags and more.</li>
+        <li><strong>Organization:</strong> Recursive folder views (ungrouped or grouped), virtual copies, color labels, star ratings, tags and more.</li>
         <li><strong>File Operations:</strong> Import, copy, move, rename, and duplicate images/folders.</li>
         <li><strong>Filmstrip View:</strong> Quickly navigate between all the images in your current folder while editing.</li>
         <li><strong>Batch Operations:</strong> Save significant time by applying a consistent set of adjustments or exporting entire batches of images simultaneously.</li>

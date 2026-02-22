@@ -786,6 +786,18 @@ function ViewModeOptions({ mode, setMode }: { mode: LibraryViewMode; setMode: (m
         <span>Recursive</span>
         {mode === LibraryViewMode.Recursive && <Check size={16} />}
       </button>
+      <button
+        className={`w-full text-left px-3 py-2 text-sm rounded-md flex items-center justify-between transition-colors duration-150 ${
+          mode === LibraryViewMode.RecursiveGrouped
+            ? 'bg-card-active text-text-primary font-semibold'
+            : 'text-text-primary hover:bg-bg-primary'
+        }`}
+        onClick={() => setMode(LibraryViewMode.RecursiveGrouped)}
+        role="menuitem"
+      >
+        <span>Recursive Grouped</span>
+        {mode === LibraryViewMode.RecursiveGrouped && <Check size={16} />}
+      </button>
     </>
   );
 }
@@ -1171,7 +1183,7 @@ export default function MainLibrary({
   });
 
   const groups = useMemo(() => {
-    if (libraryViewMode === LibraryViewMode.Flat || selectedCollectionName) return null;
+    if (libraryViewMode !== LibraryViewMode.RecursiveGrouped || selectedCollectionName) return null;
     return groupImagesByFolder(imageList, currentFolderPath);
   }, [imageList, currentFolderPath, libraryViewMode, selectedCollectionName]);
 
@@ -1214,7 +1226,7 @@ export default function MainLibrary({
     let targetTop = 0;
     let found = false;
 
-    if (libraryViewMode === LibraryViewMode.Recursive && !selectedCollectionName) {
+    if (libraryViewMode === LibraryViewMode.RecursiveGrouped && !selectedCollectionName) {
       const groups = groupImagesByFolder(imageList, currentFolderPath);
       for (const group of groups) {
         if (group.images.length === 0) continue;
@@ -1640,7 +1652,7 @@ export default function MainLibrary({
 
               let rows: any[] = [];
 
-              if (libraryViewMode === LibraryViewMode.Recursive && groups) {
+              if (libraryViewMode === LibraryViewMode.RecursiveGrouped && groups) {
                 groups.forEach((group) => {
                   if (group.images.length === 0) return;
 

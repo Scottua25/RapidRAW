@@ -166,6 +166,7 @@ export interface BrushSettings {
 export enum LibraryViewMode {
   Flat = 'flat',
   Recursive = 'recursive',
+  RecursiveGrouped = 'recursive-grouped',
 }
 
 export interface FilterCriteria {
