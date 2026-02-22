@@ -254,6 +254,9 @@ const resolvePathFromRoot = (root: string, relativePath: string): string => {
   return root.endsWith(separator) ? `${root}${normalizedRelative}` : `${root}${separator}${normalizedRelative}`;
 };
 
+const isRecursiveLibraryMode = (mode: LibraryViewMode | null | undefined): boolean =>
+  mode === LibraryViewMode.Recursive || mode === LibraryViewMode.RecursiveGrouped;
+
 const useAsyncThrottle = <T extends unknown[]>(
   fn: (...args: T) => Promise<void>,
   deps: any[] = []
@@ -1726,10 +1729,9 @@ function App() {
           const root = settings.lastRootPath;
           const currentPath = settings.lastFolderState?.currentFolderPath || root;
 
-          const command =
-            settings.libraryViewMode === LibraryViewMode.Recursive
-              ? Invokes.ListImagesRecursive
-              : Invokes.ListImagesInDir;
+          const command = isRecursiveLibraryMode(settings.libraryViewMode)
+            ? Invokes.ListImagesRecursive
+            : Invokes.ListImagesInDir;
 
           preloadedDataRef.current = {
             rootPath: root,
@@ -2129,8 +2131,7 @@ function App() {
           setHistogram(null);
         }
 
-        const command =
-          libraryViewMode === LibraryViewMode.Recursive ? Invokes.ListImagesRecursive : Invokes.ListImagesInDir;
+        const command = isRecursiveLibraryMode(libraryViewMode) ? Invokes.ListImagesRecursive : Invokes.ListImagesInDir;
 
         let files: ImageFile[];
         if (preloadedImages) {
@@ -2217,8 +2218,7 @@ function App() {
 
     if (!currentFolderPath) return;
     try {
-      const command =
-        libraryViewMode === LibraryViewMode.Recursive ? Invokes.ListImagesRecursive : Invokes.ListImagesInDir;
+      const command = isRecursiveLibraryMode(libraryViewMode) ? Invokes.ListImagesRecursive : Invokes.ListImagesInDir;
 
       const files: ImageFile[] = await invoke(command, { path: currentFolderPath });
       const exifSortKeys = ['date_taken', 'iso', 'shutter_speed', 'aperture', 'focal_length'];
