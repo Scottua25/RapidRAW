@@ -377,6 +377,10 @@ pub struct AppSettings {
     pub linux_gpu_optimization: Option<bool>,
     #[serde(default)]
     pub library_view_mode: Option<String>,
+    #[serde(default)]
+    pub folder_tree_collections_split_ratio: Option<f32>,
+    #[serde(default)]
+    pub custom_library_orders: HashMap<String, Vec<String>>,
     #[serde(default = "default_export_presets")]
     pub export_presets: Vec<ExportPreset>,
     #[serde(default)]
@@ -452,6 +456,8 @@ impl Default for AppSettings {
             #[cfg(not(target_os = "linux"))]
             linux_gpu_optimization: Some(false),
             library_view_mode: Some("flat".to_string()),
+            folder_tree_collections_split_ratio: Some(0.72),
+            custom_library_orders: HashMap::new(),
             export_presets: default_export_presets(),
             my_lenses: Some(Vec::new()),
             high_res_zoom_multiplier: Some(1.0),

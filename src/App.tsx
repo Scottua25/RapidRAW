@@ -391,6 +391,7 @@ function App() {
   const [rightPanelWidth, setRightPanelWidth] = useState<number>(320);
   const [bottomPanelHeight, setBottomPanelHeight] = useState<number>(144);
   const [activeTreeSection, setActiveTreeSection] = useState<string | null>('current');
+  const [folderTreeCollectionsSplitRatio, setFolderTreeCollectionsSplitRatio] = useState<number>(0.72);
   const [isResizing, setIsResizing] = useState(false);
   const [thumbnailSize, setThumbnailSize] = useState(ThumbnailSize.Medium);
   const [thumbnailAspectRatio, setThumbnailAspectRatio] = useState(ThumbnailAspectRatio.Cover);
@@ -1802,6 +1803,9 @@ function App() {
         if (settings?.waveformHeight !== undefined) {
           setWaveformHeight(settings.waveformHeight);
         }
+        if (typeof settings?.folderTreeCollectionsSplitRatio === 'number') {
+          setFolderTreeCollectionsSplitRatio(settings.folderTreeCollectionsSplitRatio);
+        }
         if (settings?.pinnedFolders && settings.pinnedFolders.length > 0) {
           try {
             const trees = await invoke(Invokes.GetPinnedFolderTrees, {
@@ -1928,6 +1932,13 @@ function App() {
       });
     }
   }, [isWaveformVisible, activeWaveformChannel, waveformHeight, appSettings, handleSettingsChange]);
+
+  useEffect(() => {
+    if (!appSettings) return;
+    if (appSettings.folderTreeCollectionsSplitRatio !== folderTreeCollectionsSplitRatio) {
+      handleSettingsChange({ ...appSettings, folderTreeCollectionsSplitRatio });
+    }
+  }, [folderTreeCollectionsSplitRatio, appSettings, handleSettingsChange]);
 
   useEffect(() => {
     if (!appSettings?.adaptiveEditorTheme || !selectedImage) {
@@ -5232,6 +5243,8 @@ function App() {
           onActiveSectionChange={handleActiveTreeSectionChange}
           showImageCounts={appSettings?.enableFolderImageCounts ?? false}
           isInstantTransition={isInstantTransition}
+          collectionsSplitRatio={folderTreeCollectionsSplitRatio}
+          onCollectionsSplitRatioChange={setFolderTreeCollectionsSplitRatio}
         />
         <Resizer
           direction={Orientation.Vertical}
