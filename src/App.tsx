@@ -5084,6 +5084,7 @@ function App() {
               onGoHome={handleGoHome}
               onImageClick={handleLibraryImageSingleClick}
               onImageDoubleClick={handleImageSelect}
+              onReorderImages={handleReorderImages}
               onLibraryRefresh={handleLibraryRefresh}
               onOpenFolder={handleOpenFolder}
               onSettingsChange={handleSettingsChange}

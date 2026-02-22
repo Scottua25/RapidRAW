@@ -377,6 +377,8 @@ pub struct AppSettings {
     pub linux_gpu_optimization: Option<bool>,
     #[serde(default)]
     pub library_view_mode: Option<String>,
+    #[serde(default)]
+    pub custom_library_orders: HashMap<String, Vec<String>>,
     #[serde(default = "default_export_presets")]
     pub export_presets: Vec<ExportPreset>,
     #[serde(default)]
@@ -451,6 +453,7 @@ impl Default for AppSettings {
             #[cfg(not(target_os = "linux"))]
             linux_gpu_optimization: Some(false),
             library_view_mode: Some("flat".to_string()),
+            custom_library_orders: HashMap::new(),
             export_presets: default_export_presets(),
             my_lenses: Some(Vec::new()),
             high_res_zoom_multiplier: Some(1.0),
@@ -2236,6 +2239,42 @@ pub fn save_settings(settings: AppSettings, app_handle: AppHandle) -> Result<(),
     let path = get_settings_path(&app_handle)?;
     let json_string = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     fs::write(path, json_string).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_custom_library_order(scope_key: String, app_handle: AppHandle) -> Result<Vec<String>, String> {
+    let settings = load_settings(app_handle)?;
+    Ok(settings
+        .custom_library_orders
+        .get(&scope_key)
+        .cloned()
+        .unwrap_or_default())
+}
+
+#[tauri::command]
+pub fn save_custom_library_order(
+    scope_key: String,
+    ordered_paths: Vec<String>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    let mut settings = load_settings(app_handle.clone())?;
+
+    // Deduplicate while preserving order.
+    let mut deduped = Vec::with_capacity(ordered_paths.len());
+    let mut seen = HashSet::new();
+    for path in ordered_paths {
+        if seen.insert(path.clone()) {
+            deduped.push(path);
+        }
+    }
+
+    if deduped.is_empty() {
+        settings.custom_library_orders.remove(&scope_key);
+    } else {
+        settings.custom_library_orders.insert(scope_key, deduped);
+    }
+
+    save_settings(settings, app_handle)
 }
 
 #[tauri::command]
