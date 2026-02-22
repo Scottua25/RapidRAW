@@ -457,6 +457,7 @@ function App() {
   const [isLibraryExportPanelVisible, setIsLibraryExportPanelVisible] = useState(false);
   const [libraryViewMode, setLibraryViewMode] = useState<LibraryViewMode>(LibraryViewMode.Flat);
   const [leftPanelWidth, setLeftPanelWidth] = useState<number>(256);
+  const [folderTreeCollectionsSplitRatio, setFolderTreeCollectionsSplitRatio] = useState<number>(0.72);
   const [rightPanelWidth, setRightPanelWidth] = useState<number>(320);
   const [bottomPanelHeight, setBottomPanelHeight] = useState<number>(144);
   const [activeTreeSection, setActiveTreeSection] = useState<string | null>('current');
@@ -1690,6 +1691,9 @@ function App() {
         if (settings?.activeTreeSection) {
           setActiveTreeSection(settings.activeTreeSection);
         }
+        if (typeof settings?.folderTreeCollectionsSplitRatio === 'number') {
+          setFolderTreeCollectionsSplitRatio(settings.folderTreeCollectionsSplitRatio);
+        }
         if (settings?.pinnedFolders && settings.pinnedFolders.length > 0) {
           try {
             const trees = await invoke(Invokes.GetPinnedFolderTrees, { paths: settings.pinnedFolders });
@@ -1768,6 +1772,15 @@ function App() {
       handleSettingsChange({ ...appSettings, libraryViewMode });
     }
   }, [libraryViewMode, appSettings, handleSettingsChange]);
+
+  useEffect(() => {
+    if (isInitialMount.current || !appSettings) {
+      return;
+    }
+    if (appSettings.folderTreeCollectionsSplitRatio !== folderTreeCollectionsSplitRatio) {
+      handleSettingsChange({ ...appSettings, folderTreeCollectionsSplitRatio });
+    }
+  }, [folderTreeCollectionsSplitRatio, appSettings, handleSettingsChange]);
 
   useEffect(() => {
     invoke(Invokes.GetSupportedFileTypes)
@@ -4936,6 +4949,8 @@ function App() {
           activeSection={activeTreeSection}
           onActiveSectionChange={handleActiveTreeSectionChange}
           showImageCounts={appSettings?.enableFolderImageCounts ?? false}
+          collectionsSplitRatio={folderTreeCollectionsSplitRatio}
+          onCollectionsSplitRatioChange={setFolderTreeCollectionsSplitRatio}
         />
         <Resizer
           direction={Orientation.Vertical}
@@ -4961,6 +4976,7 @@ function App() {
     copiedFilePaths,
     handleCollectionContextMenu,
     handleSelectCollection,
+    folderTreeCollectionsSplitRatio,
   ]);
 
   const memoizedLibraryView = useMemo(() => (

@@ -160,6 +160,7 @@ export interface AppSettings {
   enableFolderImageCounts?: boolean;
   linearRawMode?: string;
   customLibraryOrders?: Record<string, string[]>;
+  folderTreeCollectionsSplitRatio?: number;
 }
 
 export interface BrushSettings {
