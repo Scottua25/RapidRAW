@@ -102,6 +102,7 @@ interface MainLibraryProps {
   onGoHome(): void;
   onImageClick(path: string, event: any): void;
   onImageDoubleClick(path: string): void;
+  onReorderImages(draggedPath: string, targetPath: string): void;
   onLibraryRefresh(): void;
   onOpenFolder(): void;
   onSettingsChange(settings: AppSettings): Promise<void>;
@@ -839,6 +840,8 @@ function FilterOptions({ filterCriteria, setFilterCriteria }: FilterOptionProps)
 }
 
 function SortOptions({ sortCriteria, setSortCriteria, sortOptions }: SortOptionsProps) {
+  const isCustomOrder = sortCriteria.key === 'custom';
+
   const handleKeyChange = (key: string) => {
     setSortCriteria((prev: SortCriteria) => ({ ...prev, key }));
   };
@@ -856,41 +859,43 @@ function SortOptions({ sortCriteria, setSortCriteria, sortOptions }: SortOptions
         <Text as="div" variant={TextVariants.small} weight={TextWeights.semibold} className="uppercase">
           Sort by
         </Text>
-        <button
-          onClick={handleOrderToggle}
-          data-tooltip={`Sort ${sortCriteria.order === SortDirection.Ascending ? 'Descending' : 'Ascending'}`}
-          className="absolute top-1/2 right-3 -translate-y-1/2 p-1 bg-transparent border-none text-text-secondary hover:text-text-primary focus:outline-hidden focus:ring-1 focus:ring-accent rounded-sm"
-        >
-          {sortCriteria.order === SortDirection.Ascending ? (
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="m18 15-6-6-6 6" />
-            </svg>
-          ) : (
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          )}
-        </button>
+        {!isCustomOrder && (
+          <button
+            onClick={handleOrderToggle}
+            data-tooltip={`Sort ${sortCriteria.order === SortDirection.Ascending ? 'Descending' : 'Ascending'}`}
+            className="absolute top-1/2 right-3 -translate-y-1/2 p-1 bg-transparent border-none text-text-secondary hover:text-text-primary focus:outline-hidden focus:ring-1 focus:ring-accent rounded-sm"
+          >
+            {sortCriteria.order === SortDirection.Ascending ? (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="m18 15-6-6-6 6" />
+              </svg>
+            ) : (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            )}
+          </button>
+        )}
       </div>
       {sortOptions.map((option) => {
         const isSelected = sortCriteria.key === option.key;
@@ -1430,6 +1435,7 @@ const Row = ({
   gap,
   isListView,
   columnWidths,
+  isCustomOrder,
 }: any) => {
   const row = rows[index];
   if (row.type === 'footer') return null;
@@ -1487,7 +1493,7 @@ const Row = ({
         gap: gap,
       }}
     >
-      {row.images.map((imageFile: ImageFile) => (
+      {row.images.map((imageFile: ImageFile) =>
         isListView ? (
           <div
             key={imageFile.path}
@@ -1531,8 +1537,8 @@ const Row = ({
             loadedThumbnails={loadedThumbnails}
             imageRatings={imageRatings}
           />
-        )
-      ))}
+        ),
+      )}
     </div>
   );
 };
@@ -1575,6 +1581,7 @@ const DraggableThumbnailTile = ({
     multiSelectedPaths.includes(imageFile.path) && multiSelectedPaths.length > 0 ? multiSelectedPaths : [imageFile.path];
   const { attributes, listeners, setNodeRef: setDraggableRef, transform, isDragging } = useDraggable({
     id: `image:${imageFile.path}`,
+    disabled: !isCustomOrder,
     data: {
       kind: 'image',
       path: imageFile.path,
@@ -1610,8 +1617,8 @@ const DraggableThumbnailTile = ({
         opacity: isCustomOrder && isDragging ? 0.18 : 1,
       }}
       className={isOver && isCustomOrder ? 'ring-2 ring-accent rounded-md' : ''}
-      {...attributes}
-      {...listeners}
+      {...(isCustomOrder ? attributes : {})}
+      {...(isCustomOrder ? listeners : {})}
     >
       <Thumbnail
         data={thumbnails[imageFile.path]}
@@ -1654,6 +1661,7 @@ export default function MainLibrary({
   onGoHome,
   onImageClick,
   onImageDoubleClick,
+  onReorderImages,
   onLibraryRefresh,
   onOpenFolder,
   onSettingsChange,

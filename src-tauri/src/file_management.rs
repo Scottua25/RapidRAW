@@ -2424,6 +2424,42 @@ pub fn save_settings(settings: AppSettings, app_handle: AppHandle) -> Result<(),
 }
 
 #[tauri::command]
+pub fn get_custom_library_order(scope_key: String, app_handle: AppHandle) -> Result<Vec<String>, String> {
+    let settings = load_settings(app_handle)?;
+    Ok(settings
+        .custom_library_orders
+        .get(&scope_key)
+        .cloned()
+        .unwrap_or_default())
+}
+
+#[tauri::command]
+pub fn save_custom_library_order(
+    scope_key: String,
+    ordered_paths: Vec<String>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    let mut settings = load_settings(app_handle.clone())?;
+
+    // Deduplicate while preserving order.
+    let mut deduped = Vec::with_capacity(ordered_paths.len());
+    let mut seen = HashSet::new();
+    for path in ordered_paths {
+        if seen.insert(path.clone()) {
+            deduped.push(path);
+        }
+    }
+
+    if deduped.is_empty() {
+        settings.custom_library_orders.remove(&scope_key);
+    } else {
+        settings.custom_library_orders.insert(scope_key, deduped);
+    }
+
+    save_settings(settings, app_handle)
+}
+
+#[tauri::command]
 pub fn handle_import_presets_from_file(
     file_path: String,
     app_handle: AppHandle,

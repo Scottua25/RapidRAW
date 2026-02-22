@@ -5645,6 +5645,7 @@ function App() {
             aiModelDownloadStatus={aiModelDownloadStatus}
             appSettings={appSettings}
             currentFolderPath={currentFolderPath}
+            draggingPaths={activeImageDrag?.paths ?? []}
             filterCriteria={filterCriteria}
             imageList={sortedImageList}
             imageRatings={imageRatings}
@@ -5663,6 +5664,7 @@ function App() {
             onGoHome={handleGoHome}
             onImageClick={handleLibraryImageSingleClick}
             onImageDoubleClick={handleImageSelect}
+            onReorderImages={handleReorderImages}
             onLibraryRefresh={handleLibraryRefresh}
             onOpenFolder={handleOpenFolder}
             onSettingsChange={handleSettingsChange}
