@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import { VariableSizeList as List } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import Button from '../ui/Button';
@@ -90,6 +91,7 @@ interface MainLibraryProps {
   onGoHome(): void;
   onImageClick(path: string, event: any): void;
   onImageDoubleClick(path: string): void;
+  onReorderImages(draggedPath: string, targetPath: string): void;
   onLibraryRefresh(): void;
   onOpenFolder(): void;
   onSettingsChange(settings: AppSettings): void;
@@ -133,6 +135,7 @@ interface ImageLayer {
 interface ThumbnailProps {
   data: string | undefined;
   isActive: boolean;
+  isDraggable?: boolean;
   isSelected: boolean;
   onContextMenu(e: any): void;
   onImageClick(path: string, event: any): void;
@@ -685,6 +688,8 @@ function FilterOptions({ filterCriteria, setFilterCriteria }: FilterOptionProps)
 }
 
 function SortOptions({ sortCriteria, setSortCriteria, sortOptions }: SortOptionsProps) {
+  const isCustomOrder = sortCriteria.key === 'custom';
+
   const handleKeyChange = (key: string) => {
     setSortCriteria((prev: SortCriteria) => ({ ...prev, key }));
   };
@@ -700,41 +705,43 @@ function SortOptions({ sortCriteria, setSortCriteria, sortOptions }: SortOptions
     <>
       <div className="px-3 py-2 relative flex items-center">
         <div className="text-xs font-semibold text-text-secondary uppercase">Sort by</div>
-        <button
-          onClick={handleOrderToggle}
-          data-tooltip={`Sort ${sortCriteria.order === SortDirection.Ascending ? 'Descending' : 'Ascending'}`}
-          className="absolute top-1/2 right-3 -translate-y-1/2 p-1 bg-transparent border-none text-text-secondary hover:text-text-primary focus:outline-none focus:ring-1 focus:ring-accent rounded"
-        >
-          {sortCriteria.order === SortDirection.Ascending ? (
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="m18 15-6-6-6 6" />
-            </svg>
-          ) : (
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          )}
-        </button>
+        {!isCustomOrder && (
+          <button
+            onClick={handleOrderToggle}
+            data-tooltip={`Sort ${sortCriteria.order === SortDirection.Ascending ? 'Descending' : 'Ascending'}`}
+            className="absolute top-1/2 right-3 -translate-y-1/2 p-1 bg-transparent border-none text-text-secondary hover:text-text-primary focus:outline-none focus:ring-1 focus:ring-accent rounded"
+          >
+            {sortCriteria.order === SortDirection.Ascending ? (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="m18 15-6-6-6 6" />
+              </svg>
+            ) : (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            )}
+          </button>
+        )}
       </div>
       {sortOptions.map((option) => {
         const isSelected = sortCriteria.key === option.key;
@@ -858,6 +865,7 @@ function ViewOptionsDropdown({
 function Thumbnail({
   data,
   isActive,
+  isDraggable = false,
   isSelected,
   onContextMenu,
   onImageClick,
@@ -943,7 +951,9 @@ function Thumbnail({
 
   return (
     <div
-      className={`aspect-square bg-surface rounded-md overflow-hidden cursor-pointer group relative transition-all duration-150 ${ringClass}`}
+      className={`aspect-square bg-surface rounded-md overflow-hidden group relative transition-all duration-150 ${
+        isDraggable ? 'cursor-move' : 'cursor-pointer'
+      } ${ringClass}`}
       onClick={(e: any) => {
         e.stopPropagation();
         onImageClick(path, e);
@@ -974,6 +984,7 @@ function Thumbnail({
                     : 'object-cover'
                 } relative`}
                 decoding="async"
+                draggable={false}
                 loading="lazy"
                 src={layer.url}
               />
@@ -1028,6 +1039,68 @@ function Thumbnail({
   );
 }
 
+function DraggableThumbnailTile({
+  imageFile,
+  itemWidth,
+  isCustomOrder,
+  activePath,
+  multiSelectedPaths,
+  onContextMenu,
+  onImageClick,
+  onImageDoubleClick,
+  thumbnails,
+  thumbnailAspectRatio,
+  loadedThumbnails,
+  imageRatings,
+}: any) {
+  const { attributes, listeners, setNodeRef: setDraggableRef, transform, isDragging } = useDraggable({
+    id: imageFile.path,
+    disabled: !isCustomOrder,
+  });
+  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
+    id: imageFile.path,
+    disabled: !isCustomOrder,
+  });
+
+  const setNodeRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      setDraggableRef(node);
+      setDroppableRef(node);
+    },
+    [setDraggableRef, setDroppableRef],
+  );
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        width: itemWidth,
+        height: itemWidth,
+        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        opacity: isDragging ? 0.6 : 1,
+      }}
+      className={isOver && isCustomOrder ? 'ring-2 ring-accent rounded-md' : ''}
+      {...(isCustomOrder ? attributes : {})}
+      {...(isCustomOrder ? listeners : {})}
+    >
+      <Thumbnail
+        data={thumbnails[imageFile.path]}
+        isActive={activePath === imageFile.path}
+        isDraggable={isCustomOrder}
+        isSelected={multiSelectedPaths.includes(imageFile.path)}
+        onContextMenu={(e: any) => onContextMenu(e, imageFile.path)}
+        onImageClick={onImageClick}
+        onImageDoubleClick={onImageDoubleClick}
+        onLoad={() => loadedThumbnails.add(imageFile.path)}
+        path={imageFile.path}
+        rating={imageRatings?.[imageFile.path] || 0}
+        tags={imageFile.tags}
+        aspectRatio={thumbnailAspectRatio}
+      />
+    </div>
+  );
+}
+
 const Row = ({ index, style, data }: any) => {
   const {
     rows,
@@ -1044,6 +1117,7 @@ const Row = ({ index, style, data }: any) => {
     itemWidth,
     outerPadding,
     gap,
+    isCustomOrder,
   } = data;
 
   const row = rows[index];
@@ -1095,27 +1169,21 @@ const Row = ({ index, style, data }: any) => {
       }}
     >
       {row.images.map((imageFile: ImageFile) => (
-        <div
+        <DraggableThumbnailTile
           key={imageFile.path}
-          style={{
-            width: itemWidth,
-            height: itemWidth,
-          }}
-        >
-          <Thumbnail
-            data={thumbnails[imageFile.path]}
-            isActive={activePath === imageFile.path}
-            isSelected={multiSelectedPaths.includes(imageFile.path)}
-            onContextMenu={(e: any) => onContextMenu(e, imageFile.path)}
-            onImageClick={onImageClick}
-            onImageDoubleClick={onImageDoubleClick}
-            onLoad={() => loadedThumbnails.add(imageFile.path)}
-            path={imageFile.path}
-            rating={imageRatings?.[imageFile.path] || 0}
-            tags={imageFile.tags}
-            aspectRatio={thumbnailAspectRatio}
-          />
-        </div>
+          imageFile={imageFile}
+          itemWidth={itemWidth}
+          isCustomOrder={isCustomOrder}
+          activePath={activePath}
+          multiSelectedPaths={multiSelectedPaths}
+          onContextMenu={onContextMenu}
+          onImageClick={onImageClick}
+          onImageDoubleClick={onImageDoubleClick}
+          thumbnails={thumbnails}
+          thumbnailAspectRatio={thumbnailAspectRatio}
+          loadedThumbnails={loadedThumbnails}
+          imageRatings={imageRatings}
+        />
       ))}
     </div>
   );
@@ -1145,6 +1213,7 @@ export default function MainLibrary({
   onGoHome,
   onImageClick,
   onImageDoubleClick,
+  onReorderImages,
   onLibraryRefresh,
   onOpenFolder,
   onSettingsChange,
@@ -1175,6 +1244,7 @@ export default function MainLibrary({
   const [latestVersion, setLatestVersion] = useState('');
   const [isLoaderVisible, setIsLoaderVisible] = useState(false);
   const loadedThumbnailsRef = useRef(new Set<string>());
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const prevScrollState = useRef({
     path: null as string | null,
@@ -1206,6 +1276,7 @@ export default function MainLibrary({
       { key: 'iso', label: 'ISO', disabled: !exifEnabled },
       { key: 'shutter_speed', label: 'Shutter Speed', disabled: !exifEnabled },
       { key: 'aperture', label: 'Aperture', disabled: !exifEnabled },
+      { key: 'custom', label: 'Custom Order' },
     ];
   }, [appSettings?.enableExifReading]);
 
@@ -1681,37 +1752,47 @@ export default function MainLibrary({
               };
 
               return (
-                <List
-                  ref={listRef}
-                  outerRef={outerRef}
-                  height={height}
-                  itemCount={rows.length}
-                  itemSize={getItemSize}
-                  width={width}
-                  initialScrollOffset={libraryScrollTop}
-                  onScroll={({ scrollOffset }) => setLibraryScrollTop(scrollOffset)}
-                  outerElementType={customOuterElement}
-                  innerElementType={InnerGridElement}
-                  key={`${width}-${thumbnailSize}-${libraryViewMode}`}
-                  itemData={{
-                    rows,
-                    activePath,
-                    multiSelectedPaths,
-                    onContextMenu,
-                    onImageClick,
-                    onImageDoubleClick,
-                    thumbnails,
-                    thumbnailAspectRatio,
-                    loadedThumbnails: loadedThumbnailsRef.current,
-                    imageRatings,
-                    rootPath: currentFolderPath,
-                    itemWidth,
-                    outerPadding: OUTER_PADDING,
-                    gap: ITEM_GAP,
+                <DndContext
+                  sensors={sensors}
+                  onDragEnd={({ active, over }) => {
+                    if (sortCriteria.key !== 'custom') return;
+                    if (!over || active.id === over.id) return;
+                    onReorderImages(String(active.id), String(over.id));
                   }}
                 >
-                  {Row}
-                </List>
+                  <List
+                    ref={listRef}
+                    outerRef={outerRef}
+                    height={height}
+                    itemCount={rows.length}
+                    itemSize={getItemSize}
+                    width={width}
+                    initialScrollOffset={libraryScrollTop}
+                    onScroll={({ scrollOffset }) => setLibraryScrollTop(scrollOffset)}
+                    outerElementType={customOuterElement}
+                    innerElementType={InnerGridElement}
+                    key={`${width}-${thumbnailSize}-${libraryViewMode}`}
+                    itemData={{
+                      rows,
+                      activePath,
+                      multiSelectedPaths,
+                      onContextMenu,
+                      onImageClick,
+                      onImageDoubleClick,
+                      thumbnails,
+                      thumbnailAspectRatio,
+                      loadedThumbnails: loadedThumbnailsRef.current,
+                      imageRatings,
+                      rootPath: currentFolderPath,
+                      itemWidth,
+                      outerPadding: OUTER_PADDING,
+                      gap: ITEM_GAP,
+                      isCustomOrder: sortCriteria.key === 'custom',
+                    }}
+                  >
+                    {Row}
+                  </List>
+                </DndContext>
               );
             }}
           </AutoSizer>

@@ -1,6 +1,7 @@
 use rand::Rng;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use crate::file_management::parse_virtual_path;
@@ -29,12 +30,35 @@ pub struct CollectionImageInfo {
     pub is_missing: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct CollectionOrderManifest {
+    ordered_vc_ids: Vec<String>,
+}
+
 fn collections_root(session_root: &str) -> PathBuf {
     Path::new(session_root).join(COLLECTIONS_DIR_NAME)
 }
 
 fn collection_path(session_root: &str, collection_name: &str) -> PathBuf {
     collections_root(session_root).join(collection_name)
+}
+
+fn collection_order_path(session_root: &str, collection_name: &str) -> PathBuf {
+    collection_path(session_root, collection_name).join(".order.json")
+}
+
+fn load_collection_order_from_disk(session_root: &str, collection_name: &str) -> Vec<String> {
+    let path = collection_order_path(session_root, collection_name);
+    if !path.exists() {
+        return Vec::new();
+    }
+
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<CollectionOrderManifest>(&content).ok())
+        .map(|manifest| manifest.ordered_vc_ids)
+        .unwrap_or_default()
 }
 
 fn sanitize_collection_name(name: &str) -> String {
@@ -249,7 +273,63 @@ pub fn list_collection_images(
     }
 
     images.sort_by(|a, b| a.file_name.to_lowercase().cmp(&b.file_name.to_lowercase()));
+
+    let ordered_vc_ids = load_collection_order_from_disk(&session_root, &collection_name);
+    if !ordered_vc_ids.is_empty() {
+        let mut index_map = HashMap::new();
+        for (index, vc_id) in ordered_vc_ids.iter().enumerate() {
+            index_map.insert(vc_id.as_str(), index);
+        }
+
+        images.sort_by(|a, b| {
+            let idx_a = a.vc_id.as_ref().and_then(|id| index_map.get(id.as_str()));
+            let idx_b = b.vc_id.as_ref().and_then(|id| index_map.get(id.as_str()));
+
+            match (idx_a, idx_b) {
+                (Some(x), Some(y)) => x.cmp(y),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => a.file_name.to_lowercase().cmp(&b.file_name.to_lowercase()),
+            }
+        });
+    }
     Ok(images)
+}
+
+#[tauri::command]
+pub fn get_collection_order(session_root: String, collection_name: String) -> Result<Vec<String>, String> {
+    let collection_dir = collection_path(&session_root, &collection_name);
+    if !collection_dir.exists() || !collection_dir.is_dir() {
+        return Err("Collection does not exist.".to_string());
+    }
+    Ok(load_collection_order_from_disk(&session_root, &collection_name))
+}
+
+#[tauri::command]
+pub fn save_collection_order(
+    session_root: String,
+    collection_name: String,
+    ordered_vc_ids: Vec<String>,
+) -> Result<(), String> {
+    let collection_dir = collection_path(&session_root, &collection_name);
+    if !collection_dir.exists() || !collection_dir.is_dir() {
+        return Err("Collection does not exist.".to_string());
+    }
+
+    let mut deduped = Vec::with_capacity(ordered_vc_ids.len());
+    let mut seen = HashMap::new();
+    for vc_id in ordered_vc_ids {
+        if !seen.contains_key(&vc_id) {
+            seen.insert(vc_id.clone(), true);
+            deduped.push(vc_id);
+        }
+    }
+
+    let manifest = CollectionOrderManifest {
+        ordered_vc_ids: deduped,
+    };
+    let json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
+    fs::write(collection_order_path(&session_root, &collection_name), json).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

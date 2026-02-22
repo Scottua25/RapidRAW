@@ -46,6 +46,8 @@ export enum Invokes {
   GetFolderTree = 'get_folder_tree',
   GetLogFilePath = 'get_log_file_path',
   GetPinnedFolderTrees = 'get_pinned_folder_trees',
+  GetCustomLibraryOrder = 'get_custom_library_order',
+  GetCollectionOrder = 'get_collection_order',
   GetSupportedFileTypes = 'get_supported_file_types',
   HandleExportPresetsToFile = 'handle_export_presets_to_file',
   HandleImportPresetsFromFile = 'handle_import_presets_from_file',
@@ -85,6 +87,8 @@ export enum Invokes {
   FetchCommunityPresets = 'fetch_community_presets',
   GenerateAllCommunityPreviews = 'generate_all_community_previews',
   SaveCommunityPreset = 'save_community_preset',
+  SaveCustomLibraryOrder = 'save_custom_library_order',
+  SaveCollectionOrder = 'save_collection_order',
   SaveTempFile = 'save_temp_file',
 }
 
@@ -155,6 +159,7 @@ export interface AppSettings {
   myLenses?: any;
   enableFolderImageCounts?: boolean;
   linearRawMode?: string;
+  customLibraryOrders?: Record<string, string[]>;
 }
 
 export interface BrushSettings {

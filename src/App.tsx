@@ -283,6 +283,28 @@ const resolvePathFromRoot = (root: string, relativePath: string): string => {
 const isRecursiveLibraryMode = (mode: LibraryViewMode | null | undefined): boolean =>
   mode === LibraryViewMode.Recursive || mode === LibraryViewMode.RecursiveGrouped;
 
+const getLibraryOrderScopeKey = (
+  folderPath: string | null,
+  mode: LibraryViewMode,
+): string | null => {
+  if (!folderPath) return null;
+  const modeKey =
+    mode === LibraryViewMode.Flat
+      ? 'flat'
+      : mode === LibraryViewMode.RecursiveGrouped
+      ? 'recursive-grouped'
+      : 'recursive';
+  return `${modeKey}|${folderPath}`;
+};
+
+const getVcIdFromVirtualPath = (path: string): string | null => {
+  const query = path.split('?')[1];
+  if (!query) return null;
+  const params = new URLSearchParams(query);
+  const vc = params.get('vc');
+  return vc && vc.length > 0 ? vc : null;
+};
+
 const useAsyncThrottle = <T extends unknown[]>(
   fn: (...args: T) => Promise<void>,
   deps: any[] = []
@@ -515,6 +537,9 @@ function App() {
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [isMaskControlHovered, setIsMaskControlHovered] = useState(false);
   const [libraryScrollTop, setLibraryScrollTop] = useState<number>(0);
+  const [customOrderPaths, setCustomOrderPaths] = useState<Array<string>>([]);
+  const loadedCustomOrderContextRef = useRef<string | null>(null);
+  const fallbackCustomOrderByContextRef = useRef<Record<string, Array<string>>>({});
   const { showContextMenu } = useContextMenu();
   const imagePathList = useMemo(() => imageList.map((f: ImageFile) => f.path), [imageList]);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
@@ -1119,6 +1144,95 @@ function App() {
     }
   };
 
+  const customOrderScopeKey = useMemo(() => {
+    if (selectedCollectionName) return null;
+    return getLibraryOrderScopeKey(currentFolderPath, libraryViewMode);
+  }, [selectedCollectionName, currentFolderPath, libraryViewMode]);
+
+  const customOrderContextKey = useMemo(() => {
+    if (selectedCollectionName) return `collection|${selectedCollectionName}`;
+    if (customOrderScopeKey) return `library|${customOrderScopeKey}`;
+    return null;
+  }, [selectedCollectionName, customOrderScopeKey]);
+
+  const persistCustomOrder = useCallback(
+    (orderedPaths: Array<string>) => {
+      if (selectedCollectionName) {
+        if (!rootPath) return;
+        const vcIds: string[] = [];
+        const seen = new Set<string>();
+        orderedPaths.forEach((path) => {
+          const vcId = getVcIdFromVirtualPath(path);
+          if (vcId && !seen.has(vcId)) {
+            seen.add(vcId);
+            vcIds.push(vcId);
+          }
+        });
+
+        invoke(Invokes.SaveCollectionOrder, {
+          sessionRoot: rootPath,
+          collectionName: selectedCollectionName,
+          orderedVcIds: vcIds,
+        }).catch((err) => console.error('Failed to save collection custom order:', err));
+        return;
+      }
+
+      if (!customOrderScopeKey) return;
+      setAppSettings((prev) => {
+        if (!prev) return prev;
+        const existingOrders = prev.customLibraryOrders || {};
+        return {
+          ...prev,
+          customLibraryOrders: {
+            ...existingOrders,
+            [customOrderScopeKey]: orderedPaths,
+          },
+        };
+      });
+      invoke(Invokes.SaveCustomLibraryOrder, {
+        scopeKey: customOrderScopeKey,
+        orderedPaths,
+      }).catch((err) => console.error('Failed to save library custom order:', err));
+    },
+    [selectedCollectionName, rootPath, customOrderScopeKey],
+  );
+
+  const handleReorderImages = useCallback(
+    (draggedPath: string, targetPath: string) => {
+      if (sortCriteria.key !== 'custom' || draggedPath === targetPath) return;
+
+      setImageList((prev) => {
+        if (!prev.length) return prev;
+        const currentPaths = prev.map((img) => img.path);
+
+        const seedOrder = customOrderPaths.length > 0 ? customOrderPaths : currentPaths;
+        const currentPathSet = new Set(currentPaths);
+        const normalizedSeed = seedOrder.filter((path) => currentPathSet.has(path));
+        const seenSeed = new Set(normalizedSeed);
+        const fullOrder = [...normalizedSeed, ...currentPaths.filter((path) => !seenSeed.has(path))];
+
+        const fromIndex = fullOrder.indexOf(draggedPath);
+        const toIndex = fullOrder.indexOf(targetPath);
+        if (fromIndex < 0 || toIndex < 0) return prev;
+
+        const [moved] = fullOrder.splice(fromIndex, 1);
+        fullOrder.splice(toIndex, 0, moved);
+
+        const orderIndex = new Map(fullOrder.map((path, idx) => [path, idx]));
+        const reordered = [...prev].sort(
+          (a, b) =>
+            (orderIndex.get(a.path) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.path) ?? Number.MAX_SAFE_INTEGER),
+        );
+
+        loadedCustomOrderContextRef.current = customOrderContextKey;
+        setCustomOrderPaths(fullOrder);
+        persistCustomOrder(fullOrder);
+        return reordered;
+      });
+    },
+    [sortCriteria.key, customOrderPaths, persistCustomOrder, customOrderContextKey],
+  );
+
   const sortedImageList = useMemo(() => {
     let processedList = imageList;
 
@@ -1240,6 +1354,22 @@ function App() {
 
     const list = [...filteredBySearch];
 
+    if (sortCriteria.key === 'custom') {
+      const orderIndex = new Map(customOrderPaths.map((path, idx) => [path, idx]));
+      list.sort((a, b) => {
+        const aIdx = orderIndex.get(a.path);
+        const bIdx = orderIndex.get(b.path);
+        const aRank = aIdx ?? Number.MAX_SAFE_INTEGER;
+        const bRank = bIdx ?? Number.MAX_SAFE_INTEGER;
+
+        if (aRank !== bRank) {
+          return aRank - bRank;
+        }
+        return a.path.localeCompare(b.path);
+      });
+      return list;
+    }
+
     const parseShutter = (val: string | undefined): number | null => {
       if (!val) return null;
       const cleanVal = val.replace(/s/i, '').trim();
@@ -1340,7 +1470,7 @@ function App() {
       return order === SortDirection.Ascending ? comparison : -comparison;
     });
     return list;
-  }, [imageList, sortCriteria, imageRatings, filterCriteria, supportedTypes, searchCriteria, appSettings]);
+  }, [imageList, sortCriteria, imageRatings, filterCriteria, supportedTypes, searchCriteria, customOrderPaths]);
 
   const applyAdjustments = useAsyncThrottle(
     async (currentAdjustments: Adjustments, dragging: boolean = false) => {
@@ -2094,6 +2224,112 @@ function App() {
       setError('Failed to refresh image list.');
     }
   }, [currentFolderPath, sortCriteria.key, appSettings?.enableExifReading, libraryViewMode, selectedCollectionName, loadCollectionFiles]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCustomOrder = async () => {
+      if (sortCriteria.key !== 'custom') {
+        return;
+      }
+
+      if (!customOrderContextKey) {
+        setCustomOrderPaths([]);
+        loadedCustomOrderContextRef.current = null;
+        return;
+      }
+
+      // Do not overwrite an already-established custom order when toggling sort mode.
+      if (loadedCustomOrderContextRef.current === customOrderContextKey && customOrderPaths.length > 0) {
+        return;
+      }
+
+      if (selectedCollectionName) {
+        if (imageList.length === 0) {
+          setCustomOrderPaths([]);
+          loadedCustomOrderContextRef.current = customOrderContextKey;
+          return;
+        }
+        if (!rootPath) return;
+        try {
+          const orderedVcIds: string[] = await invoke(Invokes.GetCollectionOrder, {
+            sessionRoot: rootPath,
+            collectionName: selectedCollectionName,
+          });
+          if (cancelled) return;
+
+          const byVcId = new Map<string, string>();
+          imageList.forEach((img) => {
+            const vcId = getVcIdFromVirtualPath(img.path);
+            if (vcId && !byVcId.has(vcId)) {
+              byVcId.set(vcId, img.path);
+            }
+          });
+
+          const mappedPaths = orderedVcIds
+            .map((vcId) => byVcId.get(vcId))
+            .filter((path): path is string => !!path);
+          if (mappedPaths.length > 0) {
+            setCustomOrderPaths(mappedPaths);
+          } else {
+            const fallback = customOrderContextKey
+              ? fallbackCustomOrderByContextRef.current[customOrderContextKey] || []
+              : [];
+            const imagePathSet = new Set(imageList.map((img) => img.path));
+            const fallbackFiltered = fallback.filter((path) => imagePathSet.has(path));
+            setCustomOrderPaths(fallbackFiltered);
+          }
+          loadedCustomOrderContextRef.current = customOrderContextKey;
+        } catch (err) {
+          console.error('Failed to load collection custom order:', err);
+          if (!cancelled) {
+            setCustomOrderPaths([]);
+          }
+        }
+        return;
+      }
+
+      if (!customOrderScopeKey) {
+        setCustomOrderPaths([]);
+        loadedCustomOrderContextRef.current = customOrderContextKey;
+        return;
+      }
+
+      try {
+        const orderedPaths: string[] = await invoke(Invokes.GetCustomLibraryOrder, { scopeKey: customOrderScopeKey });
+        if (!cancelled) {
+          if (orderedPaths.length > 0) {
+            setCustomOrderPaths(orderedPaths);
+          } else {
+            const fallback = customOrderContextKey
+              ? fallbackCustomOrderByContextRef.current[customOrderContextKey] || []
+              : [];
+            const imagePathSet = new Set(imageList.map((img) => img.path));
+            const fallbackFiltered = fallback.filter((path) => imagePathSet.has(path));
+            setCustomOrderPaths(fallbackFiltered);
+          }
+          loadedCustomOrderContextRef.current = customOrderContextKey;
+        }
+      } catch (err) {
+        console.error('Failed to load library custom order:', err);
+        if (!cancelled) {
+          setCustomOrderPaths([]);
+        }
+      }
+    };
+
+    loadCustomOrder();
+    return () => {
+      cancelled = true;
+    };
+  }, [sortCriteria.key, selectedCollectionName, rootPath, customOrderScopeKey, customOrderContextKey, imageList]);
+
+  useEffect(() => {
+    if (sortCriteria.key === 'custom' || !customOrderContextKey) {
+      return;
+    }
+    fallbackCustomOrderByContextRef.current[customOrderContextKey] = sortedImageList.map((img) => img.path);
+  }, [sortCriteria.key, customOrderContextKey, sortedImageList]);
 
   const handleToggleFolder = useCallback((path: string) => {
     setExpandedFolders((prev) => {
@@ -4762,6 +4998,7 @@ function App() {
             onGoHome={handleGoHome}
             onImageClick={handleLibraryImageSingleClick}
             onImageDoubleClick={handleImageSelect}
+            onReorderImages={handleReorderImages}
             onLibraryRefresh={handleLibraryRefresh}
             onOpenFolder={handleOpenFolder}
             onSettingsChange={handleSettingsChange}
