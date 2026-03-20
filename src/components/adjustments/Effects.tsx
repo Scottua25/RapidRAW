@@ -7,9 +7,9 @@ import { TextVariants } from '../../types/typography';
 
 interface EffectsPanelProps {
   adjustments: Adjustments;
-  isForMask: boolean;
+  isForMask?: boolean;
   setAdjustments(adjustments: Partial<Adjustments>): any;
-  handleLutSelect(path: string): void;
+  handleLutSelect?(path: string): void;
   appSettings: AppSettings | null;
   onDragStateChange?: (isDragging: boolean) => void;
 }
@@ -93,7 +93,7 @@ export default function EffectsPanel({
             <LUTControl
               lutName={adjustments.lutName || null}
               lutIntensity={adjustments.lutIntensity || 100}
-              onLutSelect={handleLutSelect}
+              onLutSelect={handleLutSelect || (() => {})}
               onIntensityChange={handleLutIntensityChange}
               onClear={handleLutClear}
               onDragStateChange={onDragStateChange}

@@ -532,6 +532,7 @@ interface FilmStripProps {
   selectedImage?: SelectedImage;
   thumbnails: Record<string, string> | undefined;
   thumbnailAspectRatio: ThumbnailAspectRatio;
+  totalImages?: number;
 }
 
 export default function Filmstrip({

@@ -1,7 +1,7 @@
 import { Folder, FolderOpen, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 
 export interface FolderTree {
   children: FolderTree[];
@@ -18,8 +18,8 @@ interface FolderTreeProps {
   isResizing: boolean;
   isVisible: boolean;
   onCollectionSelect?(collectionName: string): void;
-  onCollectionContextMenu?(event: any, collectionName: string): void;
-  onContextMenu(event: any, path: string | null, isPinned?: boolean): void;
+  onCollectionContextMenu?(event: ReactMouseEvent, collectionName: string): void;
+  onContextMenu(event: ReactMouseEvent, path: string | null, isPinned?: boolean): void;
   onFolderSelect(folder: string): void;
   onToggleFolder(folder: string): void;
   selectedCollectionName?: string | null;
@@ -386,7 +386,7 @@ export default function FolderTree({
   }, [hasCollections, isCollectionsOpen, clampTopPaneRatio, onCollectionsSplitRatioChange]);
 
   const handleSplitterMouseDown = useCallback(
-    (event: any) => {
+    (event: ReactMouseEvent) => {
       if (!hasCollections || !splitContainerRef.current) return;
       event.preventDefault();
       event.stopPropagation();
@@ -509,6 +509,7 @@ export default function FolderTree({
                               selectedPath={selectedPath}
                               pinnedFolders={pinnedFolders}
                               showImageCounts={showImageCounts && isHovering}
+                              isInstantTransition={isInstantTransition}
                             />
                           ))}
                         </div>
@@ -556,43 +557,6 @@ export default function FolderTree({
                 </>
               )}
 
-            {filteredTree && (
-              <>
-                <div>
-                  <SectionHeader
-                    title="Base Folder"
-                    isOpen={isCurrentOpen}
-                    onToggle={() => onActiveSectionChange(isCurrentOpen ? null : 'current')}
-                  />
-                </div>
-                <AnimatePresence initial={false}>
-                  {isCurrentOpen && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2, ease: 'easeInOut' }}
-                      className="overflow-hidden"
-                    >
-                      <div className="pt-1">
-                        <TreeNode
-                          expandedFolders={effectiveExpandedFolders}
-                          isExpanded={effectiveExpandedFolders.has(filteredTree.path)}
-                          node={filteredTree}
-                          onContextMenu={onContextMenu}
-                          onFolderSelect={onFolderSelect}
-                          onToggle={onToggleFolder}
-                          selectedPath={selectedPath}
-                          pinnedFolders={pinnedFolders}
-                          showImageCounts={showImageCounts && isHovering}
-                          isInstantTransition={isInstantTransition}
-                        />
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </>
-            )}
               {!filteredTree && !hasVisiblePinnedTrees && isSearching && (
                 <p className="text-text-secondary text-sm p-2 text-center">No folders found.</p>
               )}
@@ -647,7 +611,7 @@ export default function FolderTree({
                                 },
                               )}
                               onClick={() => onCollectionSelect?.(collection.name)}
-                              onContextMenu={(e: any) => onCollectionContextMenu?.(e, collection.name)}
+                              onContextMenu={(e: ReactMouseEvent) => onCollectionContextMenu?.(e, collection.name)}
                             >
                               <Folder
                                 size={16}

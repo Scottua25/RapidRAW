@@ -529,6 +529,19 @@ See [#306](https://github.com/CyberTimon/RapidRAW/issues/306) for more informati
 
 ## Contributing
 
+### Local sanity checks
+
+Before pushing local feature work, these are the most useful checks to run:
+
+```bash
+npx tsc --noEmit
+npm run build
+cargo check --manifest-path src-tauri/Cargo.toml
+npm run lint:changed
+```
+
+`npm run lint:changed` checks ESLint findings only on lines changed relative to `upstream/main`, which helps keep local work clean without forcing a repo-wide lint cleanup that would drift from upstream.
+
 I’m really grateful for any contributions you make to RapidRAW! Whether you’re reporting a bug, suggesting a new feature, or submitting a pull request - your input helps shape the project and makes it better for everyone. Don’t hesitate to open an issue or share your ideas.
 
 ### Image format issues

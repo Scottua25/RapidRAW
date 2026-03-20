@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, type MouseEvent as ReactMouseEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -44,7 +44,7 @@ import {
 import TitleBar from './window/TitleBar';
 import CommunityPage from './components/panel/CommunityPage';
 import MainLibrary from './components/panel/MainLibrary';
-import FolderTree from './components/panel/FolderTree';
+import FolderTree, { type FolderTree as FolderTreeNode } from './components/panel/FolderTree';
 import Editor from './components/panel/Editor';
 import Controls from './components/panel/right/ControlsPanel';
 import { useThumbnails } from './hooks/useThumbnails';
@@ -257,9 +257,28 @@ const resolvePathFromRoot = (root: string, relativePath: string): string => {
 const isRecursiveLibraryMode = (mode: LibraryViewMode | null | undefined): boolean =>
   mode === LibraryViewMode.Recursive || mode === LibraryViewMode.RecursiveGrouped;
 
-const useAsyncThrottle = <T extends unknown[]>(
+const getLibraryOrderScopeKey = (folderPath: string | null, mode: LibraryViewMode): string | null => {
+  if (!folderPath) return null;
+  const modeKey =
+    mode === LibraryViewMode.Flat
+      ? 'flat'
+      : mode === LibraryViewMode.RecursiveGrouped
+        ? 'recursive-grouped'
+        : 'recursive';
+  return `${modeKey}|${folderPath}`;
+};
+
+const getVcIdFromVirtualPath = (path: string): string | null => {
+  const query = path.split('?')[1];
+  if (!query) return null;
+  const params = new URLSearchParams(query);
+  const vc = params.get('vc');
+  return vc && vc.length > 0 ? vc : null;
+};
+
+const _useAsyncThrottle = <T extends unknown[]>(
   fn: (...args: T) => Promise<void>,
-  deps: any[] = []
+  deps: unknown[] = []
 ) => {
   const isProcessing = useRef(false);
   const nextArgs = useRef<T | null>(null);
@@ -292,11 +311,11 @@ const useAsyncThrottle = <T extends unknown[]>(
   }, deps);
 
   return useMemo(() => {
-    const func: any = trigger;
+    const func = trigger as ((...args: T) => void) & { cancel: () => void };
     func.cancel = () => {
       nextArgs.current = null;
     };
-    return func as ((...args: T) => void) & { cancel: () => void };
+    return func;
   }, [trigger]);
 };
 function App() {
@@ -309,8 +328,8 @@ function App() {
   const [isLayoutReady, setIsLayoutReady] = useState(false);
   const [currentFolderPath, setCurrentFolderPath] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState(new Set<string>());
-  const [folderTree, setFolderTree] = useState<any>(null);
-  const [pinnedFolderTrees, setPinnedFolderTrees] = useState<any[]>([]);
+  const [folderTree, setFolderTree] = useState<FolderTreeNode | null>(null);
+  const [pinnedFolderTrees, setPinnedFolderTrees] = useState<FolderTreeNode[]>([]);
   const [collections, setCollections] = useState<Array<CollectionInfo>>([]);
   const [selectedCollectionName, setSelectedCollectionName] = useState<string | null>(null);
   const [imageList, setImageList] = useState<Array<ImageFile>>([]);
@@ -486,6 +505,9 @@ function App() {
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [isMaskControlHovered, setIsMaskControlHovered] = useState(false);
   const [libraryScrollTop, setLibraryScrollTop] = useState<number>(0);
+  const [customOrderPaths, setCustomOrderPaths] = useState<Array<string>>([]);
+  const loadedCustomOrderContextRef = useRef<string | null>(null);
+  const fallbackCustomOrderByContextRef = useRef<Record<string, Array<string>>>({});
   const { showContextMenu } = useContextMenu();
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const { loading: isThumbnailsLoading } = useThumbnails(imageList, setThumbnails);
@@ -988,7 +1010,7 @@ function App() {
         lensTcaEnabled: adjustments.lensTcaEnabled,
         lensVignetteEnabled: adjustments.lensVignetteEnabled,
       };
-      const newParameters = await invoke(Invokes.GenerateAiSubjectMask, {
+      const newParameters = await invoke<Record<string, unknown>>(Invokes.GenerateAiSubjectMask, {
         jsAdjustments: transformAdjustments,
         endPoint: [endPoint.x, endPoint.y],
         flipHorizontal: adjustments.flipHorizontal,
@@ -1040,7 +1062,7 @@ function App() {
         lensTcaEnabled: adjustments.lensTcaEnabled,
         lensVignetteEnabled: adjustments.lensVignetteEnabled,
       };
-      const newParameters = await invoke(Invokes.GenerateAiForegroundMask, {
+      const newParameters = await invoke<Record<string, unknown>>(Invokes.GenerateAiForegroundMask, {
         jsAdjustments: transformAdjustments,
         flipHorizontal: adjustments.flipHorizontal,
         flipVertical: adjustments.flipVertical,
@@ -1089,7 +1111,7 @@ function App() {
         lensTcaEnabled: adjustments.lensTcaEnabled,
         lensVignetteEnabled: adjustments.lensVignetteEnabled,
       };
-      const newParameters = await invoke(Invokes.GenerateAiSkyMask, {
+      const newParameters = await invoke<Record<string, unknown>>(Invokes.GenerateAiSkyMask, {
         jsAdjustments: transformAdjustments,
         flipHorizontal: adjustments.flipHorizontal,
         flipVertical: adjustments.flipVertical,
@@ -1111,6 +1133,95 @@ function App() {
       setIsGeneratingAiMask(false);
     }
   };
+
+  const customOrderScopeKey = useMemo(() => {
+    if (selectedCollectionName) return null;
+    return getLibraryOrderScopeKey(currentFolderPath, libraryViewMode);
+  }, [selectedCollectionName, currentFolderPath, libraryViewMode]);
+
+  const customOrderContextKey = useMemo(() => {
+    if (selectedCollectionName) return `collection|${selectedCollectionName}`;
+    if (customOrderScopeKey) return `library|${customOrderScopeKey}`;
+    return null;
+  }, [selectedCollectionName, customOrderScopeKey]);
+
+  const persistCustomOrder = useCallback(
+    (orderedPaths: Array<string>) => {
+      if (selectedCollectionName) {
+        if (!rootPath) return;
+        const vcIds: string[] = [];
+        const seen = new Set<string>();
+        orderedPaths.forEach((path) => {
+          const vcId = getVcIdFromVirtualPath(path);
+          if (vcId && !seen.has(vcId)) {
+            seen.add(vcId);
+            vcIds.push(vcId);
+          }
+        });
+
+        invoke(Invokes.SaveCollectionOrder, {
+          sessionRoot: rootPath,
+          collectionName: selectedCollectionName,
+          orderedVcIds: vcIds,
+        }).catch((err) => console.error('Failed to save collection custom order:', err));
+        return;
+      }
+
+      if (!customOrderScopeKey) return;
+      setAppSettings((prev) => {
+        if (!prev) return prev;
+        const existingOrders = prev.customLibraryOrders || {};
+        return {
+          ...prev,
+          customLibraryOrders: {
+            ...existingOrders,
+            [customOrderScopeKey]: orderedPaths,
+          },
+        };
+      });
+      invoke(Invokes.SaveCustomLibraryOrder, {
+        scopeKey: customOrderScopeKey,
+        orderedPaths,
+      }).catch((err) => console.error('Failed to save library custom order:', err));
+    },
+    [selectedCollectionName, rootPath, customOrderScopeKey],
+  );
+
+  const handleReorderImages = useCallback(
+    (draggedPath: string, targetPath: string) => {
+      if (sortCriteria.key !== 'custom' || draggedPath === targetPath) return;
+
+      setImageList((prev) => {
+        if (!prev.length) return prev;
+        const currentPaths = prev.map((img) => img.path);
+
+        const seedOrder = customOrderPaths.length > 0 ? customOrderPaths : currentPaths;
+        const currentPathSet = new Set(currentPaths);
+        const normalizedSeed = seedOrder.filter((path) => currentPathSet.has(path));
+        const seenSeed = new Set(normalizedSeed);
+        const fullOrder = [...normalizedSeed, ...currentPaths.filter((path) => !seenSeed.has(path))];
+
+        const fromIndex = fullOrder.indexOf(draggedPath);
+        const toIndex = fullOrder.indexOf(targetPath);
+        if (fromIndex < 0 || toIndex < 0) return prev;
+
+        const [moved] = fullOrder.splice(fromIndex, 1);
+        fullOrder.splice(toIndex, 0, moved);
+
+        const orderIndex = new Map(fullOrder.map((path, idx) => [path, idx]));
+        const reordered = [...prev].sort(
+          (a, b) =>
+            (orderIndex.get(a.path) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.path) ?? Number.MAX_SAFE_INTEGER),
+        );
+
+        loadedCustomOrderContextRef.current = customOrderContextKey;
+        setCustomOrderPaths(fullOrder);
+        persistCustomOrder(fullOrder);
+        return reordered;
+      });
+    },
+    [sortCriteria.key, customOrderPaths, persistCustomOrder, customOrderContextKey],
+  );
 
   const sortedImageList = useMemo(() => {
     let processedList = imageList;
@@ -1233,6 +1344,23 @@ function App() {
 
     const list = [...filteredBySearch];
 
+    if (sortCriteria.key === 'custom') {
+      const orderIndex = new Map(customOrderPaths.map((path, idx) => [path, idx]));
+      list.sort((a, b) => {
+        const aIdx = orderIndex.get(a.path);
+        const bIdx = orderIndex.get(b.path);
+        const aRank = aIdx ?? Number.MAX_SAFE_INTEGER;
+        const bRank = bIdx ?? Number.MAX_SAFE_INTEGER;
+
+        if (aRank !== bRank) {
+          return aRank - bRank;
+        }
+
+        return a.path.localeCompare(b.path);
+      });
+      return list;
+    }
+
     const parseShutter = (val: string | undefined): number | null => {
       if (!val) return null;
       const cleanVal = val.replace(/s/i, '').trim();
@@ -1333,7 +1461,110 @@ function App() {
       return order === SortDirection.Ascending ? comparison : -comparison;
     });
     return list;
-  }, [imageList, sortCriteria, imageRatings, filterCriteria, supportedTypes, searchCriteria, appSettings]);
+  }, [imageList, sortCriteria, imageRatings, filterCriteria, supportedTypes, searchCriteria, customOrderPaths]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCustomOrder = async () => {
+      if (sortCriteria.key !== 'custom') {
+        return;
+      }
+
+      if (!customOrderContextKey) {
+        setCustomOrderPaths([]);
+        loadedCustomOrderContextRef.current = null;
+        return;
+      }
+
+      if (loadedCustomOrderContextRef.current === customOrderContextKey && customOrderPaths.length > 0) {
+        return;
+      }
+
+      if (selectedCollectionName) {
+        if (imageList.length === 0) {
+          setCustomOrderPaths([]);
+          loadedCustomOrderContextRef.current = customOrderContextKey;
+          return;
+        }
+        if (!rootPath) return;
+        try {
+          const orderedVcIds: string[] = await invoke(Invokes.GetCollectionOrder, {
+            sessionRoot: rootPath,
+            collectionName: selectedCollectionName,
+          });
+          if (cancelled) return;
+
+          const byVcId = new Map<string, string>();
+          imageList.forEach((img) => {
+            const vcId = getVcIdFromVirtualPath(img.path);
+            if (vcId && !byVcId.has(vcId)) {
+              byVcId.set(vcId, img.path);
+            }
+          });
+
+          const mappedPaths = orderedVcIds.map((vcId) => byVcId.get(vcId)).filter((path): path is string => !!path);
+          if (mappedPaths.length > 0) {
+            setCustomOrderPaths(mappedPaths);
+          } else {
+            const fallback = customOrderContextKey
+              ? fallbackCustomOrderByContextRef.current[customOrderContextKey] || []
+              : [];
+            const imagePathSet = new Set(imageList.map((img) => img.path));
+            const fallbackFiltered = fallback.filter((path) => imagePathSet.has(path));
+            setCustomOrderPaths(fallbackFiltered);
+          }
+          loadedCustomOrderContextRef.current = customOrderContextKey;
+        } catch (err) {
+          console.error('Failed to load collection custom order:', err);
+          if (!cancelled) {
+            setCustomOrderPaths([]);
+          }
+        }
+        return;
+      }
+
+      if (!customOrderScopeKey) {
+        setCustomOrderPaths([]);
+        loadedCustomOrderContextRef.current = customOrderContextKey;
+        return;
+      }
+
+      try {
+        const orderedPaths: string[] = await invoke(Invokes.GetCustomLibraryOrder, { scopeKey: customOrderScopeKey });
+        if (!cancelled) {
+          if (orderedPaths.length > 0) {
+            setCustomOrderPaths(orderedPaths);
+          } else {
+            const fallback = customOrderContextKey
+              ? fallbackCustomOrderByContextRef.current[customOrderContextKey] || []
+              : [];
+            const imagePathSet = new Set(imageList.map((img) => img.path));
+            const fallbackFiltered = fallback.filter((path) => imagePathSet.has(path));
+            setCustomOrderPaths(fallbackFiltered);
+          }
+          loadedCustomOrderContextRef.current = customOrderContextKey;
+        }
+      } catch (err) {
+        console.error('Failed to load library custom order:', err);
+        if (!cancelled) {
+          setCustomOrderPaths([]);
+        }
+      }
+    };
+
+    loadCustomOrder();
+    return () => {
+      cancelled = true;
+    };
+  }, [sortCriteria.key, selectedCollectionName, rootPath, customOrderScopeKey, customOrderContextKey, imageList, customOrderPaths.length]);
+
+  useEffect(() => {
+    if (sortCriteria.key === 'custom' || !customOrderContextKey) {
+      return;
+    }
+    fallbackCustomOrderByContextRef.current[customOrderContextKey] = sortedImageList.map((img) => img.path);
+  }, [sortCriteria.key, customOrderContextKey, sortedImageList]);
 
   useEffect(() => {
     if (selectedImage?.path && selectedImage.isReady && finalPreviewUrl) {
@@ -1722,7 +1953,7 @@ function App() {
         }
         if (settings?.pinnedFolders && settings.pinnedFolders.length > 0) {
           try {
-            const trees = await invoke(Invokes.GetPinnedFolderTrees, { paths: settings.pinnedFolders });
+            const trees = await invoke<FolderTreeNode[]>(Invokes.GetPinnedFolderTrees, { paths: settings.pinnedFolders });
             setPinnedFolderTrees(trees);
           } catch (err) {
             console.error('Failed to load pinned folder trees:', err);
@@ -1909,7 +2140,7 @@ function App() {
   const refreshAllFolderTrees = useCallback(async () => {
     if (rootPath) {
       try {
-        const treeData = await invoke(Invokes.GetFolderTree, { path: rootPath });
+        const treeData = await invoke<FolderTreeNode>(Invokes.GetFolderTree, { path: rootPath });
         setFolderTree(treeData);
       } catch (err) {
         console.error('Failed to refresh main folder tree:', err);
@@ -1920,7 +2151,7 @@ function App() {
     const currentPins = appSettings?.pinnedFolders || [];
     if (currentPins.length > 0) {
       try {
-        const trees = await invoke(Invokes.GetPinnedFolderTrees, { paths: currentPins });
+        const trees = await invoke<FolderTreeNode[]>(Invokes.GetPinnedFolderTrees, { paths: currentPins });
         setPinnedFolderTrees(trees);
       } catch (err) {
         console.error('Failed to refresh pinned folder trees:', err);
@@ -1946,7 +2177,7 @@ function App() {
       handleSettingsChange({ ...appSettings, pinnedFolders: newPins });
 
       try {
-        const trees = await invoke(Invokes.GetPinnedFolderTrees, { paths: newPins });
+        const trees = await invoke<FolderTreeNode[]>(Invokes.GetPinnedFolderTrees, { paths: newPins });
         setPinnedFolderTrees(trees);
       } catch (err) {
         console.error('Failed to refresh pinned folders:', err);
@@ -2085,7 +2316,7 @@ function App() {
         setCurrentFolderPath(path);
         setActiveView('library');
 
-        if (isNewRoot) {
+        if (isNewRoot && path) {
           setExpandedFolders(new Set([path]));
         } else if (path) {
           setExpandedFolders((prev) => {
@@ -2121,7 +2352,7 @@ function App() {
           setIsTreeLoading(true);
           handleSettingsChange({ ...appSettings, lastRootPath: path } as AppSettings);
           try {
-            const treeData = await invoke(Invokes.GetFolderTree, { path });
+            const treeData = await invoke<FolderTreeNode>(Invokes.GetFolderTree, { path });
             setFolderTree(treeData);
           } catch (err) {
             console.error('Failed to load folder tree:', err);
@@ -2606,7 +2837,10 @@ function App() {
         return;
       }
 
-      const { mode, includedAdjustments } = appSettings.copyPasteSettings;
+      const { mode, includedAdjustments } = appSettings.copyPasteSettings ?? {
+        mode: PasteMode.Replace,
+        includedAdjustments: [],
+      };
 
       const adjustmentsToApply: Partial<Adjustments> = {};
 
@@ -3493,6 +3727,7 @@ function App() {
           progress: { current: 0, total: event.payload, stage: 'Initializing...' },
           suggestions: null,
           error: null,
+          pathsToCull: [],
         });
       }
     });
@@ -3689,7 +3924,7 @@ function App() {
       setRootPath(root);
 
       if (folderState?.expandedFolders) {
-        const newExpandedFolders = new Set(folderState.expandedFolders);
+        const newExpandedFolders = new Set<string>(folderState.expandedFolders);
         newExpandedFolders.add(root);
         setExpandedFolders(newExpandedFolders);
       } else {
@@ -3872,7 +4107,7 @@ function App() {
       }
       const loadFullImageData = async () => {
         try {
-          const loadImageResult: any = await invoke(Invokes.LoadImage, {
+          const loadImageResult = await invoke<SelectedImage>(Invokes.LoadImage, {
             path: selectedImage.path,
             sessionRoot: rootPath,
           });
@@ -3906,7 +4141,7 @@ function App() {
                 ...currentSelected,
                 exif: loadImageResult.exif,
                 height: loadImageResult.height,
-                isRaw: loadImageResult.is_raw,
+                isRaw: loadImageResult.isRaw,
                 isReady: true,
                 metadata: loadImageResult.metadata,
                 originalUrl: null,
@@ -4227,7 +4462,7 @@ function App() {
             onClick: () => {
               setCollageModalState({
                 isOpen: true,
-                sourceImages: [selectedImage],
+                sourceImages: [selectedImage as ImageFile],
               });
             },
           },
@@ -4874,7 +5109,7 @@ function App() {
     showContextMenu(event.clientX, event.clientY, options);
   };
 
-  const handleCollectionContextMenu = (event: any, collectionName: string) => {
+  const handleCollectionContextMenu = (event: ReactMouseEvent, collectionName: string) => {
     event.preventDefault();
     event.stopPropagation();
     if (!rootPath) {
@@ -5418,6 +5653,7 @@ function App() {
                             waveformHeight={waveformHeight}
                             setWaveformHeight={setWaveformHeight}
                             setIsMaskControlHovered={setIsMaskControlHovered}
+                            handleLutSelect={handleLutSelect}
                           />
                         )}
                         {renderedRightPanel === Panel.Presets && (

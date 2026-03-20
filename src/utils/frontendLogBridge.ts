@@ -289,12 +289,5 @@ export function installFrontendLogBridge(): void {
     sendToBackend('error', ['Unhandled promise rejection', event.reason]);
   });
 
-  const hot = (import.meta as ImportMeta & { hot?: { on: (event: string, cb: (payload: unknown) => void) => void } })
-    .hot;
-  if (hot?.on) {
-    hot.on('vite:error', (payload: unknown) => {
-      const err = isPlainRecord(payload) ? getRecordField<unknown>(payload, 'err') ?? payload : payload;
-      sendToBackend('error', ['[vite:error:event]', err]);
-    });
-  }
+  // Avoid import.meta access here so strict TS checks still pass under CommonJS typing.
 }

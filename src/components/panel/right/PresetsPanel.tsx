@@ -396,7 +396,9 @@ export default function PresetsPanel({
         const imageData: Uint8Array = await invoke(Invokes.GeneratePresetPreview, {
           jsAdjustments: fullPresetAdjustments,
         });
-        const blob = new Blob([imageData], { type: 'image/jpeg' });
+        const blob = new Blob([imageData as unknown as BlobPart], {
+          type: 'image/jpeg',
+        });
         const url = URL.createObjectURL(blob);
         setPreviews((prev: Record<string, string | null>) => {
           const oldUrl = prev[preset.id];
@@ -456,7 +458,9 @@ export default function PresetsPanel({
         const imageData: Uint8Array = await invoke(Invokes.GeneratePresetPreview, {
           jsAdjustments: fullPresetAdjustments,
         });
-        const blob = new Blob([imageData], { type: 'image/jpeg' });
+        const blob = new Blob([imageData as unknown as BlobPart], {
+          type: 'image/jpeg',
+        });
         const url = URL.createObjectURL(blob);
 
         setPreviews((prev: Record<string, string | null>) => {

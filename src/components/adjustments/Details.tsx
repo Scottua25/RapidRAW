@@ -4,7 +4,7 @@ import { AppSettings } from '../ui/AppProperties';
 
 interface DetailsPanelProps {
   adjustments: Adjustments;
-  setAdjustments(adjustments: Partial<Adjustments>): any;
+  setAdjustments(adjustments: Partial<Adjustments> | ((prev: Partial<Adjustments>) => Partial<Adjustments>)): void;
   appSettings: AppSettings | null;
   isForMask?: boolean;
   onDragStateChange?: (isDragging: boolean) => void;
@@ -47,7 +47,7 @@ export default function DetailsPanel({
             label="Red/Cyan"
             max={100}
             min={-100}
-            onChange={(e: any) =>
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               handleAdjustmentChange(DetailsAdjustment.ChromaticAberrationRedCyan, e.target.value)
             }
             step={1}

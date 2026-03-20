@@ -345,7 +345,7 @@ export default function AIPanel({
   };
 
   const createMaskLogic = (type: Mask) => {
-    const subMask = createSubMask(type, selectedImage);
+    const subMask = createSubMask(type, selectedImage) as SubMask & { parameters?: Record<string, unknown> };
 
     const steps = adjustments?.orientationSteps || 0;
     const isRotated = steps === 1 || steps === 3;
@@ -673,8 +673,12 @@ export default function AIPanel({
                         maskType={typeToRender}
                         isGenerating={isGeneratingAi}
                         activePatchContainerId={activePatchContainerId}
-                        onClick={() => handleGridClick(typeToRender.type)}
-                        onRightClick={(e) => handleGridRightClick(e, typeToRender.type)}
+                        onClick={() => {
+                          if (typeToRender.type) {
+                            handleGridClick(typeToRender.type);
+                          }
+                        }}
+                        onRightClick={(e: React.MouseEvent) => handleGridRightClick(e, typeToRender.type)}
                       />
                     );
                   })}
@@ -1131,7 +1135,7 @@ function SubMaskRow({
     setNodeRef(node);
     setDroppableRef(node);
   };
-  const MaskIcon = MASK_ICON_MAP[subMask.type] || Circle;
+  const MaskIcon = MASK_ICON_MAP[subMask.type as Mask] || Circle;
   const { showContextMenu } = useContextMenu();
   const [isHovered, setIsHovered] = useState(false);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);

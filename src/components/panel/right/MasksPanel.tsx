@@ -94,6 +94,7 @@ interface MasksPanelProps {
   setCopiedMask(mask: MaskContainer): void;
   setCustomEscapeHandler(handler: any): void;
   setIsMaskControlHovered(hovered: boolean): void;
+  handleLutSelect?(path: string): void;
   onDragStateChange?: (isDragging: boolean) => void;
   isWaveformVisible?: boolean;
   onToggleWaveform?: () => void;
@@ -218,6 +219,7 @@ export default function MasksPanel({
   setCopiedMask,
   setCustomEscapeHandler,
   setIsMaskControlHovered,
+  handleLutSelect,
   onDragStateChange,
   isWaveformVisible,
   onToggleWaveform,
@@ -369,7 +371,7 @@ export default function MasksPanel({
   };
 
   const createMaskLogic = (type: Mask) => {
-    const subMask = createSubMask(type, selectedImage);
+    const subMask = createSubMask(type, selectedImage) as SubMask & { parameters?: Record<string, unknown> };
 
     const steps = adjustments?.orientationSteps || 0;
     const isRotated = steps === 1 || steps === 3;
@@ -461,11 +463,11 @@ export default function MasksPanel({
   const handleAddOthersMask = (event: React.MouseEvent) => {
     event.stopPropagation();
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const options = OTHERS_MASK_TYPES.map((maskType) => ({
+    const options = OTHERS_MASK_TYPES.filter((maskType) => !!maskType.type).map((maskType) => ({
       label: maskType.name,
       icon: maskType.icon,
-      onClick: () => handleGridClick(maskType.type),
-      onRightClick: () => handleGridClick(maskType.type, true),
+      onClick: () => handleGridClick(maskType.type as Mask),
+      onRightClick: () => handleGridClick(maskType.type as Mask, true),
     }));
     showContextMenu(rect.left, rect.bottom + 5, options);
   };
@@ -524,16 +526,25 @@ export default function MasksPanel({
 
     if (dragData.type === 'Creation' && dragData.maskType) {
       const creationFn = () => {
+        const maskType = dragData.maskType;
+        if (!maskType) {
+          return;
+        }
         if (overData?.type === 'Container') {
-          handleAddSubMask(overData.item!.id, dragData.maskType);
+          if (overData.item?.id) {
+            handleAddSubMask(overData.item.id, maskType);
+          }
         } else if (overData?.type === 'SubMask') {
           const container = adjustments.masks.find((m) => m.id === overData.parentId);
           if (container) {
+            if (!over) return;
             const targetIndex = container.subMasks.findIndex((sm) => sm.id === over.id);
-            handleAddSubMask(overData.parentId!, dragData.maskType, targetIndex);
+            if (overData.parentId) {
+              handleAddSubMask(overData.parentId, maskType, targetIndex);
+            }
           }
         } else {
-          handleAddMaskContainer(dragData.maskType);
+          handleAddMaskContainer(maskType);
         }
       };
 
@@ -655,10 +666,10 @@ export default function MasksPanel({
   const handlePanelContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     const allTypes = [...MASK_PANEL_CREATION_TYPES.filter((m) => m.id !== 'others'), ...OTHERS_MASK_TYPES];
-    const newMaskSubMenu = allTypes.map((m) => ({
+    const newMaskSubMenu = allTypes.filter((m) => !!m.type).map((m) => ({
       label: m.name,
       icon: m.icon,
-      onClick: () => handleAddMaskContainer(m.type),
+      onClick: () => handleAddMaskContainer(m.type as Mask),
     }));
     const handlePaste = () => {
       if (copiedMask) {
@@ -752,7 +763,7 @@ export default function MasksPanel({
                   key={maskType.type || maskType.id}
                   maskType={maskType}
                   onClick={(e: any) =>
-                    maskType.id === 'others' ? handleAddOthersMask(e) : handleGridClick(maskType.type)
+                    maskType.id === 'others' ? handleAddOthersMask(e) : maskType.type && handleGridClick(maskType.type)
                   }
                   onRightClick={(e: React.MouseEvent) => handleGridRightClick(e, maskType.type)}
                   isDraggable={maskType.id !== 'others'}
@@ -875,6 +886,7 @@ export default function MasksPanel({
                   isSettingsSectionOpen={isSettingsSectionOpen}
                   setSettingsSectionOpen={setSettingsSectionOpen}
                   presets={presets}
+                  handleLutSelect={handleLutSelect}
                 />
               </motion.div>
             )}
@@ -1291,7 +1303,7 @@ function SubMaskRow({
     setNodeRef(node);
     setDroppableRef(node);
   };
-  const MaskIcon = MASK_ICON_MAP[subMask.type] || Circle;
+  const MaskIcon = MASK_ICON_MAP[subMask.type as Mask] || Circle;
   const { showContextMenu } = useContextMenu();
   const [isHovered, setIsHovered] = useState(false);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1452,6 +1464,7 @@ function SettingsPanel({
   isSettingsSectionOpen,
   setSettingsSectionOpen,
   presets,
+  handleLutSelect,
 }: any) {
   const { showContextMenu } = useContextMenu();
   const isActive = !!container;
@@ -1517,7 +1530,7 @@ function SettingsPanel({
     updateSubMask(activeSubMask.id, { parameters: { ...activeSubMask.parameters, [key]: value } });
   };
 
-  const subMaskConfig = activeSubMask ? SUB_MASK_CONFIG[activeSubMask.type] || {} : {};
+  const subMaskConfig = activeSubMask ? SUB_MASK_CONFIG[activeSubMask.type as Mask] || {} : {};
   const isAiMask = activeSubMask && ['ai-subject', 'ai-foreground', 'ai-sky'].includes(activeSubMask.type);
   const isComponentMode = !!activeSubMask;
 
@@ -1724,6 +1737,7 @@ function SettingsPanel({
                 setAdjustments={setMaskContainerAdjustments}
                 histogram={histogram}
                 isForMask={true}
+                handleLutSelect={handleLutSelect}
                 appSettings={appSettings}
                 onDragStateChange={onDragStateChange}
               />

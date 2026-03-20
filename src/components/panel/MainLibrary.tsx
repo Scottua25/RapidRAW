@@ -91,7 +91,7 @@ interface MainLibraryProps {
   onContinueSession(): void;
   onEmptyAreaContextMenu(event: any): void;
   onGoHome(): void;
-  onImageClick(path: string, event: any): void;
+  onImageClick(path: string, event: React.MouseEvent): void;
   onImageDoubleClick(path: string): void;
   onReorderImages(draggedPath: string, targetPath: string): void;
   onLibraryRefresh(): void;
@@ -124,7 +124,7 @@ interface SearchInputProps {
 
 interface SortOptionsProps {
   sortCriteria: SortCriteria;
-  setSortCriteria(criteria: SortCriteria): void;
+  setSortCriteria(criteria: SortCriteria | ((prev: SortCriteria) => SortCriteria)): void;
   sortOptions: Array<Omit<SortCriteria, 'order'> & { label?: string; disabled?: boolean }>;
 }
 
@@ -177,7 +177,7 @@ interface ViewOptionsProps {
   onSelectAspectRatio(aspectRatio: ThumbnailAspectRatio): any;
   setFilterCriteria(criteria: Partial<FilterCriteria>): void;
   setLibraryViewMode(mode: LibraryViewMode): void;
-  setSortCriteria(criteria: SortCriteria): void;
+  setSortCriteria(criteria: SortCriteria | ((prev: SortCriteria) => SortCriteria)): void;
   sortCriteria: SortCriteria;
   sortOptions: Array<Omit<SortCriteria, 'order'> & { label?: string; disabled?: boolean }>;
   thumbnailSize: ThumbnailSize;
@@ -1194,7 +1194,20 @@ const DraggableThumbnailTile = ({
   thumbnailAspectRatio,
   loadedThumbnails,
   imageRatings,
-}: any) => {
+}: {
+  activePath: string | null;
+  imageFile: ImageFile;
+  imageRatings: Record<string, number>;
+  isCustomOrder: boolean;
+  itemWidth: number;
+  loadedThumbnails: Set<string>;
+  multiSelectedPaths: string[];
+  onContextMenu(event: React.MouseEvent, path: string): void;
+  onImageClick(path: string, event: React.MouseEvent): void;
+  onImageDoubleClick(path: string): void;
+  thumbnailAspectRatio: ThumbnailAspectRatio;
+  thumbnails: Record<string, string>;
+}) => {
   const { attributes, listeners, setNodeRef: setDraggableRef, transform, isDragging } = useDraggable({
     id: imageFile.path,
     disabled: !isCustomOrder,
@@ -1230,13 +1243,13 @@ const DraggableThumbnailTile = ({
         isActive={activePath === imageFile.path}
         isDraggable={isCustomOrder}
         isSelected={multiSelectedPaths.includes(imageFile.path)}
-        onContextMenu={(e: any) => onContextMenu(e, imageFile.path)}
+        onContextMenu={(e: React.MouseEvent) => onContextMenu(e, imageFile.path)}
         onImageClick={onImageClick}
         onImageDoubleClick={onImageDoubleClick}
         onLoad={() => loadedThumbnails.add(imageFile.path)}
         path={imageFile.path}
         rating={imageRatings?.[imageFile.path] || 0}
-        tags={imageFile.tags}
+        tags={imageFile.tags ?? []}
         aspectRatio={thumbnailAspectRatio}
       />
     </div>

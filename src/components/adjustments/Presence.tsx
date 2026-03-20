@@ -3,7 +3,7 @@ import { Adjustments, DetailsAdjustment } from '../../utils/adjustments';
 
 interface PresencePanelProps {
   adjustments: Adjustments;
-  setAdjustments(adjustments: Partial<Adjustments>): any;
+  setAdjustments(adjustments: Partial<Adjustments> | ((prev: Partial<Adjustments>) => Partial<Adjustments>)): void;
   isForMask?: boolean;
   onDragStateChange?: (isDragging: boolean) => void;
 }
@@ -25,7 +25,7 @@ export default function PresencePanel({
         label="Clarity"
         max={100}
         min={-100}
-        onChange={(e: any) => handleAdjustmentChange(DetailsAdjustment.Clarity, e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleAdjustmentChange(DetailsAdjustment.Clarity, e.target.value)}
         step={1}
         value={adjustments.clarity}
         onDragStateChange={onDragStateChange}
@@ -34,7 +34,9 @@ export default function PresencePanel({
         label="Structure"
         max={100}
         min={-100}
-        onChange={(e: any) => handleAdjustmentChange(DetailsAdjustment.Structure, e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+          handleAdjustmentChange(DetailsAdjustment.Structure, e.target.value)
+        }
         step={1}
         value={adjustments.structure}
         onDragStateChange={onDragStateChange}
@@ -43,7 +45,7 @@ export default function PresencePanel({
         label="Dehaze"
         max={100}
         min={-100}
-        onChange={(e: any) => handleAdjustmentChange(DetailsAdjustment.Dehaze, e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleAdjustmentChange(DetailsAdjustment.Dehaze, e.target.value)}
         step={1}
         value={adjustments.dehaze}
         onDragStateChange={onDragStateChange}
@@ -53,7 +55,7 @@ export default function PresencePanel({
           label="Centré"
           max={100}
           min={-100}
-          onChange={(e: any) => handleAdjustmentChange(DetailsAdjustment.Centré, e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleAdjustmentChange(DetailsAdjustment.Centré, e.target.value)}
           step={1}
           value={adjustments.centré}
           onDragStateChange={onDragStateChange}

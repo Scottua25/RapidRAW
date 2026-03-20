@@ -1,5 +1,5 @@
 import { ExportPreset } from './ExportImportProperties';
-import { Adjustments } from '../../utils/adjustments';
+import { Adjustments, CopyPasteSettings } from '../../utils/adjustments';
 import { ToolType } from '../panel/right/Masks';
 
 export const GLOBAL_KEYS = [
@@ -165,8 +165,12 @@ export interface AppSettings {
   enableAiTagging?: boolean;
   enableExifReading?: boolean;
   filterCriteria?: FilterCriteria;
-  lastFolderState?: any;
-  pinnedFolders?: any;
+  fontFamily?: string;
+  lastFolderState?: {
+    currentFolderPath?: string | null;
+    expandedFolders?: string[];
+  } | null;
+  pinnedFolders?: string[];
   lastRootPath: string | null;
   libraryViewMode?: LibraryViewMode;
   sortCriteria?: SortCriteria;
@@ -188,6 +192,8 @@ export interface AppSettings {
   isWaveformVisible?: boolean;
   waveformHeight?: number;
   activeWaveformChannel?: string;
+  copyPasteSettings?: CopyPasteSettings;
+  taggingShortcuts?: string[];
   customLibraryOrders?: Record<string, string[]>;
   folderTreeCollectionsSplitRatio?: number;
 }
@@ -253,18 +259,23 @@ export interface Preset {
 export interface Progress {
   completed?: number;
   current?: number;
+  stage?: string;
   total: number;
 }
 
 export interface SelectedImage {
   exif: any;
   height: number;
+  is_edited?: boolean;
   isRaw: boolean;
   isReady: boolean;
+  is_virtual_copy?: boolean;
   metadata?: any;
+  modified?: number;
   original_base64?: string;
   originalUrl: string | null;
   path: string;
+  tags?: Array<string> | null;
   thumbnailUrl: string;
   width: number;
 }

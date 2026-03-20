@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 
 interface BasicAdjustmentsProps {
   adjustments: Adjustments;
-  setAdjustments(adjustments: Partial<Adjustments>): any;
+  setAdjustments(adjustments: Partial<Adjustments> | ((prev: Partial<Adjustments>) => Partial<Adjustments>)): void;
   isForMask?: boolean;
   isWbPickerActive?: boolean;
   toggleWbPicker?: () => void;
@@ -134,7 +134,7 @@ export default function BasicAdjustments({
   toggleWbPicker,
   onDragStateChange,
 }: BasicAdjustmentsProps) {
-  const handleAdjustmentChange = (key: BasicAdjustment | ColorAdjustment, value: any) => {
+  const handleAdjustmentChange = (key: BasicAdjustment | ColorAdjustment, value: string) => {
     const numericValue = parseFloat(value);
     setAdjustments((prev: Partial<Adjustments>) => ({ ...prev, [key]: numericValue }));
   };
@@ -159,7 +159,7 @@ export default function BasicAdjustments({
         label="Exposure"
         max={5}
         min={-5}
-        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Exposure, e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleAdjustmentChange(BasicAdjustment.Exposure, e.target.value)}
         step={0.01}
         value={adjustments.exposure}
         onDragStateChange={onDragStateChange}
@@ -184,7 +184,9 @@ export default function BasicAdjustments({
           label="Temperature"
           max={100}
           min={-100}
-          onChange={(e: any) => handleAdjustmentChange(ColorAdjustment.Temperature, e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            handleAdjustmentChange(ColorAdjustment.Temperature, e.target.value)
+          }
           step={1}
           value={adjustments.temperature || 0}
           onDragStateChange={onDragStateChange}
@@ -193,7 +195,7 @@ export default function BasicAdjustments({
           label="Tint"
           max={100}
           min={-100}
-          onChange={(e: any) => handleAdjustmentChange(ColorAdjustment.Tint, e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleAdjustmentChange(ColorAdjustment.Tint, e.target.value)}
           step={1}
           value={adjustments.tint || 0}
           onDragStateChange={onDragStateChange}

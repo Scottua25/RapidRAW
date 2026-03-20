@@ -4,7 +4,7 @@ import { Adjustments, BasicAdjustment } from '../../utils/adjustments';
 
 interface TonePanelProps {
   adjustments: Adjustments;
-  setAdjustments(adjustments: Partial<Adjustments>): any;
+  setAdjustments(adjustments: Partial<Adjustments> | ((prev: Partial<Adjustments>) => Partial<Adjustments>)): void;
   histogram: ChannelConfig | null;
   theme?: string;
   isForMask?: boolean;
@@ -19,7 +19,7 @@ export default function TonePanel({
   isForMask = false,
   onDragStateChange,
 }: TonePanelProps) {
-  const handleAdjustmentChange = (key: BasicAdjustment, value: any) => {
+  const handleAdjustmentChange = (key: BasicAdjustment, value: string) => {
     const numericValue = parseFloat(value);
     setAdjustments((prev: Partial<Adjustments>) => ({ ...prev, [key]: numericValue }));
   };
@@ -30,7 +30,7 @@ export default function TonePanel({
         label="Brightness"
         max={5}
         min={-5}
-        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Brightness, e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleAdjustmentChange(BasicAdjustment.Brightness, e.target.value)}
         step={0.01}
         value={adjustments.brightness}
         onDragStateChange={onDragStateChange}
@@ -39,7 +39,7 @@ export default function TonePanel({
         label="Contrast"
         max={100}
         min={-100}
-        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Contrast, e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleAdjustmentChange(BasicAdjustment.Contrast, e.target.value)}
         step={1}
         value={adjustments.contrast}
         onDragStateChange={onDragStateChange}
@@ -48,7 +48,7 @@ export default function TonePanel({
         label="Highlights"
         max={100}
         min={-100}
-        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Highlights, e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleAdjustmentChange(BasicAdjustment.Highlights, e.target.value)}
         step={1}
         value={adjustments.highlights}
         onDragStateChange={onDragStateChange}
@@ -57,7 +57,7 @@ export default function TonePanel({
         label="Shadows"
         max={100}
         min={-100}
-        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Shadows, e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleAdjustmentChange(BasicAdjustment.Shadows, e.target.value)}
         step={1}
         value={adjustments.shadows}
         onDragStateChange={onDragStateChange}
@@ -66,7 +66,7 @@ export default function TonePanel({
         label="Whites"
         max={100}
         min={-100}
-        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Whites, e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleAdjustmentChange(BasicAdjustment.Whites, e.target.value)}
         step={1}
         value={adjustments.whites}
         onDragStateChange={onDragStateChange}
@@ -75,7 +75,7 @@ export default function TonePanel({
         label="Blacks"
         max={100}
         min={-100}
-        onChange={(e: any) => handleAdjustmentChange(BasicAdjustment.Blacks, e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleAdjustmentChange(BasicAdjustment.Blacks, e.target.value)}
         step={1}
         value={adjustments.blacks}
         onDragStateChange={onDragStateChange}

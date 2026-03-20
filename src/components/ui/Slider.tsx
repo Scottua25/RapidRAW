@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GLOBAL_KEYS } from './AppProperties';
 
 interface SliderProps {
+  disabled?: boolean;
   defaultValue?: number;
   label: any;
   max: number;
   min: number;
   onChange(event: any): void;
   onDragStateChange?(state: boolean): void;
-  step: number;
+  step?: number;
   value: number;
   trackClassName?: string;
 }
@@ -18,12 +19,13 @@ const FINE_ADJUSTMENT_MULTIPLIER = 0.2;
 
 const Slider = ({
   defaultValue = 0,
+  disabled = false,
   label,
   max,
   min,
   onChange,
   onDragStateChange = () => {},
-  step,
+  step = 1,
   value,
   trackClassName,
 }: SliderProps) => {
@@ -76,7 +78,7 @@ const Slider = ({
 
       const clampedValue = Math.max(min, Math.min(max, roundedNewValue));
 
-      if (clampedValue !== value && !isNaN(clampedValue)) {
+      if (!disabled && clampedValue !== value && !isNaN(clampedValue)) {
         const syntheticEvent = {
           target: {
             value: clampedValue,
@@ -222,6 +224,7 @@ const Slider = ({
     }
 
     e.preventDefault();
+    if (disabled) return;
 
     const rect = e.currentTarget.getBoundingClientRect();
     const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -238,6 +241,7 @@ const Slider = ({
 
   const handleTouchStart = (e: React.TouchEvent<HTMLInputElement>) => {
     if (e.touches.length === 0) return;
+    if (disabled) return;
 
     const touch = e.touches[0];
     const rect = e.currentTarget.getBoundingClientRect();
@@ -378,6 +382,7 @@ const Slider = ({
             isDragging ? 'slider-thumb-active' : ''
           }`}
           style={{ margin: 0 }}
+          disabled={disabled}
           max={String(max)}
           min={String(min)}
           onChange={handleChange}

@@ -1,13 +1,9 @@
+import React from 'react';
 import clsx from 'clsx';
 
-interface ButtonProps {
-  autoFocus?: boolean;
-  children: any;
-  className?: string;
-  disabled?: boolean;
-  onClick: any;
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  children: React.ReactNode;
   size?: string;
-  title?: string;
   variant?: string;
 }
 

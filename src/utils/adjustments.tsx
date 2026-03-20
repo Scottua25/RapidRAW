@@ -525,7 +525,7 @@ export const normalizeLoadedAdjustments = (loadedAdjustments: Adjustments): any 
   }
 
   const normalizeSectionVisibility = (
-    sectionVisibility: any,
+    sectionVisibility: Partial<SectionVisibility> & { basic?: boolean; curves?: boolean; details?: boolean },
     defaults: SectionVisibility,
   ): SectionVisibility => {
     const legacyBasic = sectionVisibility?.basic;
