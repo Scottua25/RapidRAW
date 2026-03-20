@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <component type="desktop-application">
-  <id>io.github.CyberTimon.RapidRAW</id>
+  <id>io.github.scottua.RapidRAWScottua</id>
 
-  <name>RapidRAW</name>
+  <name>RapidRAW Scottua</name>
   <summary>A non-destructive, and GPU-accelerated RAW image editor built with performance in mind</summary>
   <developer id="io.github.CyberTimon">
     <name>Timon Käch</name>
@@ -26,7 +26,7 @@
     </p>
   </description>
 
-  <launchable type="desktop-id">io.github.CyberTimon.RapidRAW.desktop</launchable>
+  <launchable type="desktop-id">io.github.scottua.RapidRAWScottua.desktop</launchable>
   <screenshots>
     <screenshot type="default">
       <image>https://raw.githubusercontent.com/CyberTimon/RapidRAW/2f7c0354580bbd403287a924e2a7fce9f2cdfc40/.github/assets/editor.png</image>
@@ -35,9 +35,20 @@
   </screenshots>
 
   <content_rating type="oars-1.1"/>
-  <url type="homepage">https://github.com/CyberTimon/RapidRAW</url>
+  <url type="homepage">https://github.com/Scottua25/RapidRAW</url>
 
   <releases>
+    <release version="v1.5.2-scottua.1" date="2026-03-20">
+        <url type="details">https://github.com/Scottua25/RapidRAW/releases/tag/v1.5.2-scottua.1</url>
+        <description translate="no">
+            <p>Fork release</p>
+            <ul>
+                <li>Add before/after split view with draggable divider in the editor.</li>
+                <li>Auto-collapse the left folder and collections panel while editing.</li>
+                <li>Retain the selected fork feature stack on top of upstream v1.5.2.</li>
+            </ul>
+        </description>
+    </release>
     <release version="v1.5.2" date="2026-03-19">
         <url type="details">https://github.com/CyberTimon/RapidRAW/releases/tag/v1.5.2</url>
         <description translate="no">

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "identifier": "io.github.CyberTimon.RapidRAW",
+  "identifier": "io.github.scottua.RapidRAWScottua",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
       {
         "label": "main",
         "create": false,
-        "title": "RapidRAW",
+        "title": "RapidRAW Scottua",
         "width": 1280,
         "height": 720,
         "transparent": true,
@@ -87,5 +87,5 @@
       }
     }
   },
-  "version": "1.5.2"
+  "version": "1.5.2-scottua.1"
 }

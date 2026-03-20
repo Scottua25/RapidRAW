@@ -381,6 +381,7 @@ function App() {
     folderTree: true,
     filmstrip: true,
   });
+  const [isEditorLeftPanelExpanded, setIsEditorLeftPanelExpanded] = useState(false);
   const [isSliderDragging, setIsSliderDragging] = useState(false);
   const dragIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevAdjustmentsRef = useRef<{ path: string; adjustments: Adjustments } | null>(null);
@@ -5234,7 +5235,28 @@ function App() {
     showContextMenu(event.clientX, event.clientY, options);
   };
 
-  const shouldCollapseLeftPanel = isFullScreen || !!selectedImage;
+  useEffect(() => {
+    if (selectedImage) {
+      setIsEditorLeftPanelExpanded(false);
+    }
+  }, [selectedImage?.path]);
+
+  const isFolderTreeVisible = uiVisibility.folderTree && (!selectedImage || isEditorLeftPanelExpanded);
+
+  const handleFolderTreeVisibilityChange = useCallback(
+    (value: boolean) => {
+      if (selectedImage) {
+        if (value && !uiVisibility.folderTree) {
+          setUiVisibility((prev: UiVisibility) => ({ ...prev, folderTree: true }));
+        }
+        setIsEditorLeftPanelExpanded(value);
+        return;
+      }
+
+      setUiVisibility((prev: UiVisibility) => ({ ...prev, folderTree: value }));
+    },
+    [selectedImage, uiVisibility.folderTree],
+  );
 
   const memoizedFolderTree = useMemo(
     () =>
@@ -5245,9 +5267,8 @@ function App() {
             !isResizing && !isInstantTransition && 'transition-all duration-300 ease-in-out',
           )}
           style={{
-            maxWidth: shouldCollapseLeftPanel ? '0px' : '1000px',
-            opacity: shouldCollapseLeftPanel ? 0 : 1,
-            pointerEvents: shouldCollapseLeftPanel ? 'none' : 'auto',
+            maxWidth: isFullScreen ? '0px' : '1000px',
+            opacity: isFullScreen ? 0 : 1,
           }}
         >
           <FolderTree
@@ -5255,7 +5276,7 @@ function App() {
             expandedFolders={expandedFolders}
             isLoading={isTreeLoading}
             isResizing={isResizing}
-            isVisible={uiVisibility.folderTree}
+            isVisible={isFolderTreeVisible}
             onCollectionContextMenu={handleCollectionContextMenu}
             onCollectionSelect={handleSelectCollection}
             onContextMenu={handleFolderTreeContextMenu}
@@ -5263,8 +5284,8 @@ function App() {
             onToggleFolder={handleToggleFolder}
             selectedCollectionName={selectedCollectionName}
             selectedPath={currentFolderPath}
-            setIsVisible={(value: boolean) => setUiVisibility((prev: UiVisibility) => ({ ...prev, folderTree: value }))}
-            style={{ width: uiVisibility.folderTree ? `${leftPanelWidth}px` : '32px' }}
+            setIsVisible={handleFolderTreeVisibilityChange}
+            style={{ width: isFolderTreeVisible ? `${leftPanelWidth}px` : '32px' }}
             tree={folderTree}
             pinnedFolderTrees={pinnedFolderTrees}
             pinnedFolders={pinnedFolders}
@@ -5283,7 +5304,7 @@ function App() {
       ),
     [
       rootPath,
-      shouldCollapseLeftPanel,
+      isFolderTreeVisible,
       collections,
       expandedFolders,
       isTreeLoading,
@@ -5293,6 +5314,7 @@ function App() {
       currentFolderPath,
       selectedCollectionName,
       leftPanelWidth,
+      handleFolderTreeVisibilityChange,
       folderTree,
       pinnedFolderTrees,
       pinnedFolders,
