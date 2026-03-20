@@ -1,4 +1,13 @@
-import { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  memo,
+  useMemo,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import ReactCrop from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { Stage, Layer, Ellipse, Line, Transformer, Group, Circle, Rect } from 'react-konva';
@@ -34,6 +43,7 @@ interface ImageCanvasProps {
   finalPreviewUrl: string | null;
   handleCropComplete(c: Crop, cp: PercentCrop): void;
   imageRenderSize: RenderSize;
+  isBeforeAfterSplitView: boolean;
   isAiEditing: boolean;
   isCropping: boolean;
   isMaskControlHovered: boolean;
@@ -703,6 +713,7 @@ const ImageCanvas = memo(
     finalPreviewUrl,
     handleCropComplete,
     imageRenderSize,
+    isBeforeAfterSplitView,
     isAiEditing,
     isCropping,
     isMaskControlHovered,
@@ -734,9 +745,11 @@ const ImageCanvas = memo(
     liveRotation,
   }: ImageCanvasProps) => {
     const [isCropViewVisible, setIsCropViewVisible] = useState(false);
+    const compareContainerRef = useRef<HTMLDivElement>(null);
     const cropImageRef = useRef<HTMLImageElement>(null);
     const [displayedMaskUrl, setDisplayedMaskUrl] = useState<string | null>(null);
-      const [originalLoaded, setOriginalLoaded] = useState(false);
+    const [originalLoaded, setOriginalLoaded] = useState(false);
+    const [beforeAfterSplitPosition, setBeforeAfterSplitPosition] = useState(0.5);
     const [localInitialDrawParams, setLocalInitialDrawParams] = useState<any>(null);
     const isDrawing = useRef(false);
     const drawingStageRef = useRef<any>(null);
@@ -749,6 +762,8 @@ const ImageCanvas = memo(
     const [cursorPreview, setCursorPreview] = useState<CursorPreview>({ x: 0, y: 0, visible: false });
     const [straightenLine, setStraightenLine] = useState<any>(null);
     const isStraightening = useRef(false);
+    const isSplitDraggingRef = useRef(false);
+    const [isSplitHandleVisible, setIsSplitHandleVisible] = useState(true);
 
     const [displayState, setDisplayState] = useState({
       base: finalPreviewUrl || selectedImage.thumbnailUrl,
@@ -1625,6 +1640,49 @@ const ImageCanvas = memo(
     const cropPreviewUrl = uncroppedAdjustedPreviewUrl || selectedImage.thumbnailUrl;
     const originalSrc = transformedOriginalUrl;
     const isShowingOriginal = showOriginal && !!originalSrc;
+    const isBeforeAfterSplitActive = isBeforeAfterSplitView && !!originalSrc && originalLoaded;
+
+    const updateBeforeAfterSplitPosition = useCallback(
+      (clientX: number) => {
+        if (!compareContainerRef.current || imageRenderSize.width <= 0) {
+          return;
+        }
+
+        const rect = compareContainerRef.current.getBoundingClientRect();
+        const relativeX = clientX - rect.left - imageRenderSize.offsetX;
+        const nextPosition = Math.min(0.95, Math.max(0.05, relativeX / imageRenderSize.width));
+        setBeforeAfterSplitPosition(nextPosition);
+      },
+      [imageRenderSize.offsetX, imageRenderSize.width],
+    );
+
+    const handleBeforeAfterSplitPointerDown = useCallback(
+      (event: ReactPointerEvent<HTMLButtonElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        isSplitDraggingRef.current = true;
+        setIsSplitHandleVisible(false);
+        updateBeforeAfterSplitPosition(event.clientX);
+      },
+      [updateBeforeAfterSplitPosition],
+    );
+
+    const handleBeforeAfterSplitClick = useCallback(
+      (event: ReactMouseEvent<HTMLDivElement>) => {
+        if (!isBeforeAfterSplitActive) {
+          return;
+        }
+
+        if (event.target instanceof Element && event.target.closest('button')) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        updateBeforeAfterSplitPosition(event.clientX);
+      },
+      [isBeforeAfterSplitActive, updateBeforeAfterSplitPosition],
+    );
 
     useEffect(() => {
       if (!originalSrc) {
@@ -1646,6 +1704,46 @@ const ImageCanvas = memo(
         img.onload = null;
       };
     }, [originalSrc]);
+
+    useEffect(() => {
+      if (!isBeforeAfterSplitView) {
+        isSplitDraggingRef.current = false;
+        setIsSplitHandleVisible(true);
+      }
+    }, [isBeforeAfterSplitView]);
+
+    useEffect(() => {
+      if (!isBeforeAfterSplitActive) {
+        setBeforeAfterSplitPosition(0.5);
+      }
+    }, [isBeforeAfterSplitActive, selectedImage.path]);
+
+    useEffect(() => {
+      if (!isBeforeAfterSplitActive) {
+        return;
+      }
+
+      const handlePointerMove = (event: PointerEvent) => {
+        if (!isSplitDraggingRef.current) {
+          return;
+        }
+
+        updateBeforeAfterSplitPosition(event.clientX);
+      };
+
+      const handlePointerUp = () => {
+        isSplitDraggingRef.current = false;
+        setIsSplitHandleVisible(true);
+      };
+
+      window.addEventListener('pointermove', handlePointerMove);
+      window.addEventListener('pointerup', handlePointerUp);
+
+      return () => {
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', handlePointerUp);
+      };
+    }, [isBeforeAfterSplitActive, updateBeforeAfterSplitPosition]);
 
     const uncroppedImageRenderSize = useMemo<Partial<RenderSize> | null>(() => {
       if (!selectedImage?.width || !selectedImage?.height || !imageRenderSize?.width || !imageRenderSize?.height) {
@@ -1724,11 +1822,13 @@ const ImageCanvas = memo(
         >
           <div
             className="opacity-100"
+            onClick={handleBeforeAfterSplitClick}
             style={{
               height: '100%',
               position: 'relative',
               width: '100%',
             }}
+            ref={compareContainerRef}
           >
             <div className="absolute inset-0 w-full h-full">
               {displayState.base && (
@@ -1820,6 +1920,56 @@ const ImageCanvas = memo(
                   }
                 />
               )}
+
+              {originalSrc && isBeforeAfterSplitActive && (
+                <>
+                  <div
+                    className="pointer-events-none absolute"
+                    style={{
+                      left: `${imageRenderSize.offsetX}px`,
+                      top: `${imageRenderSize.offsetY}px`,
+                      width: `${imageRenderSize.width}px`,
+                      height: `${imageRenderSize.height}px`,
+                      overflow: 'hidden',
+                      zIndex: 2,
+                    }}
+                  >
+                    <img
+                      alt="Original split view"
+                      className="pointer-events-none"
+                      src={originalSrc}
+                      style={{
+                        width: `${imageRenderSize.width}px`,
+                        height: `${imageRenderSize.height}px`,
+                        imageRendering: isMaxZoom ? 'pixelated' : 'auto',
+                        clipPath: `inset(0 ${(1 - beforeAfterSplitPosition) * 100}% 0 0)`,
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    className="pointer-events-none absolute"
+                    style={{
+                      left: `${imageRenderSize.offsetX + imageRenderSize.width * beforeAfterSplitPosition}px`,
+                      top: `${imageRenderSize.offsetY}px`,
+                      height: `${imageRenderSize.height}px`,
+                      transform: 'translateX(-50%)',
+                      zIndex: 5,
+                    }}
+                  >
+                    <div className="h-full w-px bg-white/80 shadow-[0_0_12px_rgba(0,0,0,0.45)]" />
+                    <button
+                      type="button"
+                      aria-label="Adjust before and after split position"
+                      className="pointer-events-auto absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/60 bg-black/65 text-white shadow-lg backdrop-blur-sm transition-opacity duration-100"
+                      onPointerDown={handleBeforeAfterSplitPointerDown}
+                      style={{ touchAction: 'none', opacity: isSplitHandleVisible ? 1 : 0 }}
+                    >
+                      <span className="pointer-events-none text-lg leading-none">|</span>
+                    </button>
+                  </div>
+                </>
+              )}
               {displayedMaskUrl && (
                 <img
                   alt="Mask Overlay"
@@ -1828,7 +1978,7 @@ const ImageCanvas = memo(
                   style={{
                     height: `${imageRenderSize.height}px`,
                     left: `${imageRenderSize.offsetX}px`,
-                    opacity: isShowingOriginal || isMaskControlHovered ? 0 : 1,
+                    opacity: isShowingOriginal || isBeforeAfterSplitActive || isMaskControlHovered ? 0 : 1,
                     top: `${imageRenderSize.offsetY}px`,
                     transition: 'opacity 300ms ease-in-out',
                     width: `${imageRenderSize.width}px`,
@@ -1851,7 +2001,7 @@ const ImageCanvas = memo(
               style={{
                 cursor: effectiveCursor,
                 left: `${imageRenderSize.offsetX}px`,
-                opacity: isShowingOriginal ? 0 : 1,
+                opacity: isShowingOriginal || isBeforeAfterSplitActive ? 0 : 1,
                 transition: 'opacity 150ms ease-in-out',
                 position: 'absolute',
                 top: `${imageRenderSize.offsetY}px`,
@@ -1861,7 +2011,7 @@ const ImageCanvas = memo(
               }}
               width={imageRenderSize.width}
             >
-              <Layer listening={!showOriginal}>
+              <Layer listening={!showOriginal && !isBeforeAfterSplitActive}>
                 {(isMasking || isAiEditing) &&
                   activeContainer &&
                   sortedSubMasks.map((subMask: SubMask) => {

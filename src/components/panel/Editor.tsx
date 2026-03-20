@@ -24,6 +24,7 @@ interface EditorProps {
   canRedo: boolean;
   canUndo: boolean;
   finalPreviewUrl: string | null;
+  isBeforeAfterSplitView: boolean;
   isFullScreen: boolean;
   isLoading: boolean;
   isSliderDragging: boolean;
@@ -44,7 +45,8 @@ interface EditorProps {
   renderedRightPanel: Panel | null;
   selectedImage: SelectedImage;
   setAdjustments(adjustments: Partial<Adjustments>): void;
-  setShowOriginal(show: any): void;
+  setBeforeAfterSplitView(show: boolean | ((prev: boolean) => boolean)): void;
+  setShowOriginal(show: boolean | ((prev: boolean) => boolean)): void;
   showOriginal: boolean;
   targetZoom: number;
   thumbnails: Record<string, string>;
@@ -76,6 +78,7 @@ export default function Editor({
   canRedo,
   canUndo,
   finalPreviewUrl,
+  isBeforeAfterSplitView,
   isFullScreen,
   isLoading,
   isSliderDragging,
@@ -95,6 +98,7 @@ export default function Editor({
   onZoomed,
   selectedImage,
   setAdjustments,
+  setBeforeAfterSplitView,
   setShowOriginal,
   showOriginal,
   targetZoom,
@@ -588,7 +592,25 @@ export default function Editor({
     [selectedImage, adjustments.orientationSteps, setAdjustments, liveRotation],
   );
 
-  const toggleShowOriginal = useCallback(() => setShowOriginal((prev: boolean) => !prev), [setShowOriginal]);
+  const toggleShowOriginal = useCallback(() => {
+    setShowOriginal((prev: boolean) => {
+      const next = !prev;
+      if (next) {
+        setBeforeAfterSplitView(false);
+      }
+      return next;
+    });
+  }, [setBeforeAfterSplitView, setShowOriginal]);
+
+  const toggleBeforeAfterSplitView = useCallback(() => {
+    setBeforeAfterSplitView((prev: boolean) => {
+      const next = !prev;
+      if (next) {
+        setShowOriginal(false);
+      }
+      return next;
+    });
+  }, [setBeforeAfterSplitView, setShowOriginal]);
 
   const doubleClickProps = useMemo(() => ({ disabled: true }), []);
 
@@ -601,7 +623,7 @@ export default function Editor({
       const wrapper = transformWrapperRef.current;
       if (!wrapper) return;
 
-      if (isCropping || isMasking || isAiEditing || isWbPickerActive) return;
+      if (isCropping || isMasking || isAiEditing || isWbPickerActive || isBeforeAfterSplitView) return;
 
       if (mouseDownPos.current) {
         const dx = Math.abs(e.clientX - mouseDownPos.current.x);
@@ -667,7 +689,15 @@ export default function Editor({
         }
       }
     },
-    [isCropping, isMasking, isAiEditing, isWbPickerActive, transformWrapperRef, transformConfig.maxScale],
+    [
+      isBeforeAfterSplitView,
+      isCropping,
+      isMasking,
+      isAiEditing,
+      isWbPickerActive,
+      transformWrapperRef,
+      transformConfig.maxScale,
+    ],
   );
 
   if (!selectedImage) {
@@ -711,7 +741,7 @@ export default function Editor({
         activeSubMask?.type === Mask.Luminance ||
         activeSubMask?.parameters?.isInitialDraw));
 
-  const isZoomActionActive = !isCropping && !isMasking && !isAiEditing && !isWbPickerActive;
+  const isZoomActionActive = !isCropping && !isMasking && !isAiEditing && !isWbPickerActive && !isBeforeAfterSplitView;
   const isMaxZoom = transformState.scale >= transformConfig.maxScale - 0.5;
 
   let cursorStyle = 'default';
@@ -745,7 +775,9 @@ export default function Editor({
           canRedo={canRedo}
           canUndo={canUndo}
           isLoading={isLoading}
+          isBeforeAfterSplitViewActive={isBeforeAfterSplitView}
           onBackToLibrary={onBackToLibrary}
+          onToggleBeforeAfterSplitView={toggleBeforeAfterSplitView}
           onRedo={onRedo}
           onToggleFullScreen={onToggleFullScreen}
           onToggleShowOriginal={toggleShowOriginal}
@@ -817,6 +849,7 @@ export default function Editor({
               finalPreviewUrl={finalPreviewUrl}
               handleCropComplete={handleCropComplete}
               imageRenderSize={imageRenderSize}
+              isBeforeAfterSplitView={isBeforeAfterSplitView}
               isAiEditing={isAiEditing}
               isCropping={isCropping}
               isMaskControlHovered={isMaskControlHovered}

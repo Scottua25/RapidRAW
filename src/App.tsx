@@ -364,6 +364,7 @@ function App() {
     goToIndex: goToAdjustmentsHistoryIndex,
   } = useHistoryState(INITIAL_ADJUSTMENTS);
   const [adjustments, setLiveAdjustments] = useState<Adjustments>(INITIAL_ADJUSTMENTS);
+  const [isBeforeAfterSplitView, setIsBeforeAfterSplitView] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [isTreeLoading, setIsTreeLoading] = useState(false);
   const [isViewLoading, setIsViewLoading] = useState(false);
@@ -2592,6 +2593,7 @@ function App() {
       setMultiSelectedPaths([path]);
       setLibraryActivePath(null);
       setError(null);
+      setIsBeforeAfterSplitView(false);
       setShowOriginal(false);
       setActiveMaskId(null);
       setActiveMaskContainerId(null);
@@ -3285,8 +3287,10 @@ function App() {
     [],
   );
 
+  const needsOriginalPreview = showOriginal || isBeforeAfterSplitView;
+
   useEffect(() => {
-    if (showOriginal && selectedImage?.isReady && displaySize.width > 0 && !isSliderDragging) {
+    if (needsOriginalPreview && selectedImage?.isReady && displaySize.width > 0 && !isSliderDragging) {
       let targetRes = calculateTargetRes();
 
       if (isFullScreen && originalSize.width > 0 && originalSize.height > 0) {
@@ -3301,7 +3305,7 @@ function App() {
       requestHiFiOriginalZoom.cancel();
     };
   }, [
-    showOriginal,
+    needsOriginalPreview,
     displaySize.width,
     displaySize.height,
     calculateTargetRes,
@@ -3317,7 +3321,7 @@ function App() {
     let isEffectActive = true;
 
     const generate = async () => {
-      if (showOriginal && selectedImage?.path && !transformedOriginalUrl) {
+      if (needsOriginalPreview && selectedImage?.path && !transformedOriginalUrl) {
         try {
           const targetRes = calculateTargetRes();
 
@@ -3333,6 +3337,7 @@ function App() {
           if (isEffectActive) {
             console.error('Failed to generate original preview:', e);
             setError('Failed to show original image.');
+            setIsBeforeAfterSplitView(false);
             setShowOriginal(false);
           }
         }
@@ -3344,7 +3349,7 @@ function App() {
     return () => {
       isEffectActive = false;
     };
-  }, [showOriginal, selectedImage?.path, adjustments, transformedOriginalUrl, calculateTargetRes]);
+  }, [needsOriginalPreview, selectedImage?.path, adjustments, transformedOriginalUrl, calculateTargetRes]);
 
   const isAnyModalOpen =
     isCreateFolderModalOpen ||
@@ -5447,6 +5452,7 @@ function App() {
               canRedo={canRedo}
               canUndo={canUndo}
               finalPreviewUrl={finalPreviewUrl}
+              isBeforeAfterSplitView={isBeforeAfterSplitView}
               isFullScreen={isFullScreen}
               isLoading={isViewLoading}
               isSliderDragging={isSliderDragging}
@@ -5468,6 +5474,7 @@ function App() {
               isWbPickerActive={isWbPickerActive}
               onWbPicked={handleWbPicked}
               setAdjustments={setAdjustments}
+              setBeforeAfterSplitView={setIsBeforeAfterSplitView}
               setShowOriginal={setShowOriginal}
               showOriginal={showOriginal}
               targetZoom={zoom}
