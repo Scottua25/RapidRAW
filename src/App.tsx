@@ -5234,6 +5234,8 @@ function App() {
     showContextMenu(event.clientX, event.clientY, options);
   };
 
+  const shouldCollapseLeftPanel = isFullScreen || !!selectedImage;
+
   const memoizedFolderTree = useMemo(
     () =>
       rootPath && (
@@ -5243,8 +5245,9 @@ function App() {
             !isResizing && !isInstantTransition && 'transition-all duration-300 ease-in-out',
           )}
           style={{
-            maxWidth: isFullScreen ? '0px' : '1000px',
-            opacity: isFullScreen ? 0 : 1,
+            maxWidth: shouldCollapseLeftPanel ? '0px' : '1000px',
+            opacity: shouldCollapseLeftPanel ? 0 : 1,
+            pointerEvents: shouldCollapseLeftPanel ? 'none' : 'auto',
           }}
         >
           <FolderTree
@@ -5280,6 +5283,7 @@ function App() {
       ),
     [
       rootPath,
+      shouldCollapseLeftPanel,
       collections,
       expandedFolders,
       isTreeLoading,
