@@ -1,5 +1,5 @@
 import { memo, useState, useEffect, useRef, useMemo } from 'react';
-import { Eye, EyeOff, ArrowLeft, Maximize, Loader2, Undo, Redo, Waves } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft, Columns2, Maximize, Loader2, Undo, Redo } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { SelectedImage } from '../../ui/AppProperties';
@@ -12,10 +12,12 @@ interface EditorToolbarProps {
   canUndo: boolean;
   isLoading: boolean;
   onBackToLibrary(): void;
+  onToggleBeforeAfterSplitView(): void;
   onRedo(): void;
   onToggleFullScreen(): void;
   onToggleShowOriginal(): void;
   onUndo(): void;
+  isBeforeAfterSplitViewActive: boolean;
   selectedImage: SelectedImage;
   showOriginal: boolean;
   showDateView: boolean;
@@ -30,7 +32,9 @@ const EditorToolbar = memo(
     canRedo,
     canUndo,
     isLoading,
+    isBeforeAfterSplitViewActive,
     onBackToLibrary,
+    onToggleBeforeAfterSplitView,
     onRedo,
     onToggleFullScreen,
     onToggleShowOriginal,
@@ -619,6 +623,21 @@ const EditorToolbar = memo(
             data-tooltip={showOriginal ? 'Show Edited (B)' : 'Show Original (B)'}
           >
             {showOriginal ? <EyeOff size={20} /> : <Eye size={20} />}
+          </button>
+          <button
+            className={clsx(
+              'p-2 rounded-full transition-colors',
+              isBeforeAfterSplitViewActive
+                ? 'bg-accent text-button-text hover:bg-accent/90 hover:text-button-text'
+                : 'bg-surface hover:bg-card-active text-text-primary',
+            )}
+            onClick={onToggleBeforeAfterSplitView}
+            onKeyDown={handleButtonKeyDown}
+            data-tooltip={
+              isBeforeAfterSplitViewActive ? 'Hide Before/After Split View' : 'Show Before/After Split View'
+            }
+          >
+            <Columns2 size={20} />
           </button>
           <button
             className="bg-surface text-text-primary p-2 rounded-full hover:bg-card-active transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative"
