@@ -7,7 +7,7 @@ use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
 use exif::{Reader as ExifReader, Tag};
 use image::{DynamicImage, GenericImageView, ImageReader, imageops};
-use rawler::Orientation;
+use rawler::{Orientation, decoders::RawDecodeParams, rawsource::RawSource};
 use rayon::prelude::*;
 use serde::Deserialize;
 use serde_json::{Value, from_value};
@@ -81,7 +81,7 @@ pub fn load_base_image_from_bytes(
                 Ok(image)
             }
             Ok(Err(e)) => {
-                let classified = classify_raw_develop_error(path_for_ext_check, e);
+                let classified = classify_raw_develop_error(path_for_ext_check, bytes, e);
                 log::warn!(
                     "Error developing RAW file '{}': {}",
                     path_for_ext_check,
@@ -102,7 +102,7 @@ pub fn load_base_image_from_bytes(
     }
 }
 
-fn classify_raw_develop_error(path: &str, err: anyhow::Error) -> anyhow::Error {
+fn classify_raw_develop_error(path: &str, bytes: &[u8], err: anyhow::Error) -> anyhow::Error {
     let error_text = err.to_string();
     let lowered = error_text.to_ascii_lowercase();
     let unsupported_compression =
@@ -116,7 +116,36 @@ fn classify_raw_develop_error(path: &str, err: anyhow::Error) -> anyhow::Error {
         );
     }
 
+    if let Some(message) = classify_canon_reduced_raw_error(path, bytes, &error_text) {
+        return anyhow!(message);
+    }
+
     err
+}
+
+fn classify_canon_reduced_raw_error(path: &str, bytes: &[u8], original_error: &str) -> Option<String> {
+    if !path.to_ascii_lowercase().ends_with(".cr2") {
+        return None;
+    }
+
+    let source = RawSource::new_from_slice(bytes);
+    let decoder = rawler::get_decoder(&source).ok()?;
+    let metadata = decoder.raw_metadata(&source, &RawDecodeParams::default()).ok()?;
+
+    if metadata.make != "Canon" {
+        return None;
+    }
+
+    let raw_image = decoder.raw_image(&source, &RawDecodeParams::default(), false).ok()?;
+
+    if raw_image.cpp != 3 {
+        return None;
+    }
+
+    Some(format!(
+        "Unsupported Canon reduced RAW variant for '{}'. This file appears to be a Canon sRAW/mRAW-style CR2 from model '{}' (3-component reduced RAW), which RapidRAW does not fully support yet. Original error: {}",
+        path, metadata.model, original_error
+    ))
 }
 
 pub fn load_image_with_orientation(
