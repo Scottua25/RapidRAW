@@ -1,5 +1,6 @@
 import { Folder, FolderOpen, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 import clsx from 'clsx';
+import { useDroppable } from '@dnd-kit/core';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo, useEffect, useRef, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 
@@ -119,6 +120,13 @@ function TreeNode({
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = node.path === selectedPath;
   const isPinned = pinnedFolders.includes(node.path);
+  const { setNodeRef, isOver } = useDroppable({
+    id: `folder:${node.path}`,
+    data: {
+      kind: 'folder',
+      path: node.path,
+    },
+  });
 
   const handleFolderIconClick = (e: any) => {
     e.stopPropagation();
@@ -158,8 +166,10 @@ function TreeNode({
   return (
     <div className="text-sm">
       <div
+        ref={setNodeRef}
         className={clsx('flex items-center gap-2 p-1.5 rounded-md transition-colors', {
           'bg-surface': isSelected,
+          'ring-1 ring-accent bg-accent/10': isOver,
           'hover:bg-card-active': !isSelected,
         })}
         onClick={handleNameClick}

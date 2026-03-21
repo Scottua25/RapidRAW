@@ -1,4 +1,14 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type MouseEvent as ReactMouseEvent } from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  pointerWithin,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
 import { motion, AnimatePresence } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -227,6 +237,13 @@ interface CollectionImageEntry {
   isMissing?: boolean;
 }
 
+interface ActiveImageDragState {
+  path: string;
+  paths: string[];
+}
+
+type DragDropAction = 'move' | 'copy';
+
 const RIGHT_PANEL_ORDER = [
   Panel.Metadata,
   Panel.Adjustments,
@@ -238,6 +255,60 @@ const RIGHT_PANEL_ORDER = [
 ];
 
 const DEBUG = false;
+
+function ImageDragOverlay({
+  activeDrag,
+  action,
+  thumbnails,
+}: {
+  activeDrag: ActiveImageDragState;
+  action: DragDropAction;
+  thumbnails: Record<string, string>;
+}) {
+  const previewPaths = activeDrag.paths.slice(0, 3);
+  const stackOffsets = [
+    { rotate: -6, x: -10, y: 10, opacity: 0.45 },
+    { rotate: -3, x: -5, y: 5, opacity: 0.7 },
+    { rotate: 0, x: 0, y: 0, opacity: 1 },
+  ];
+
+  return (
+    <div className="relative w-24 h-24 pointer-events-none">
+      {previewPaths.map((path, index) => {
+        const thumb = thumbnails[path];
+        const offset = stackOffsets[Math.max(0, stackOffsets.length - previewPaths.length + index)];
+        return (
+          <div
+            key={path}
+            className="absolute inset-0 rounded-xl overflow-hidden border border-white/20 bg-surface shadow-2xl"
+            style={{
+              transform: `translate(${offset.x}px, ${offset.y}px) rotate(${offset.rotate}deg)`,
+              opacity: offset.opacity,
+            }}
+          >
+            {thumb ? (
+              <img alt="" className="w-full h-full object-cover" draggable={false} src={thumb} />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-surface">
+                <Images className="text-text-secondary" size={28} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {activeDrag.paths.length > 1 && (
+        <div className="absolute -top-2 -right-2 min-w-8 h-8 px-2 rounded-full bg-accent text-black text-sm font-semibold flex items-center justify-center shadow-lg">
+          {activeDrag.paths.length}
+        </div>
+      )}
+
+      <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 px-3 h-7 rounded-full bg-bg-primary/90 border border-white/10 text-xs font-semibold text-text-primary flex items-center justify-center shadow-lg backdrop-blur-sm whitespace-nowrap">
+        {action === 'copy' ? 'Copy here' : 'Move here'}
+      </div>
+    </div>
+  );
+}
 
 const getParentDir = (filePath: string): string => {
   const separator = filePath.includes('/') ? '/' : '\\';
@@ -342,6 +413,8 @@ function App() {
   });
   const [supportedTypes, setSupportedTypes] = useState<SupportedTypes | null>(null);
   const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
+  const [activeImageDrag, setActiveImageDrag] = useState<ActiveImageDragState | null>(null);
+  const [dragDropAction, setDragDropAction] = useState<DragDropAction>('move');
   const selectedImagePathRef = useRef<string | null>(null);
   useEffect(() => {
     selectedImagePathRef.current = selectedImage?.path ?? null;
@@ -3067,6 +3140,131 @@ function App() {
     [copiedFilePaths, currentFolderPath, refreshImageList],
   );
 
+  const movePathsToFolder = useCallback(
+    async (sourcePaths: string[], destinationFolder: string) => {
+      if (sourcePaths.length === 0 || !destinationFolder) {
+        return;
+      }
+
+      try {
+        await invoke(Invokes.MoveFiles, { sourcePaths, destinationFolder });
+        setCopiedFilePaths([]);
+        setMultiSelectedPaths([]);
+        await refreshAllFolderTrees();
+        await refreshImageList();
+      } catch (err) {
+        setError(`Failed to move files: ${err}`);
+      }
+    },
+    [refreshAllFolderTrees, refreshImageList],
+  );
+
+  const copyPathsToFolder = useCallback(
+    async (sourcePaths: string[], destinationFolder: string) => {
+      if (sourcePaths.length === 0 || !destinationFolder) {
+        return;
+      }
+
+      try {
+        await invoke(Invokes.CopyFiles, { sourcePaths, destinationFolder });
+        await refreshAllFolderTrees();
+        await refreshImageList();
+      } catch (err) {
+        setError(`Failed to copy files: ${err}`);
+      }
+    },
+    [refreshAllFolderTrees, refreshImageList],
+  );
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+  );
+
+  const handleGlobalDragEnd = useCallback(
+    async ({ active, over }: DragEndEvent) => {
+      const action = dragDropAction;
+      setActiveImageDrag(null);
+      setDragDropAction('move');
+
+      if (!over) {
+        return;
+      }
+
+      const activeData = active.data.current as
+        | { kind?: 'image'; path?: string; paths?: string[]; sourceFolder?: string | null }
+        | undefined;
+      const overData = over.data.current as { kind?: 'folder' | 'image-drop'; path?: string } | undefined;
+
+      if (activeData?.kind !== 'image') {
+        return;
+      }
+
+      if (overData?.kind === 'folder' && overData.path) {
+        if ((activeData.sourceFolder ?? null) === overData.path) {
+          return;
+        }
+        if (action === 'copy') {
+          await copyPathsToFolder(activeData.paths ?? [activeData.path as string], overData.path);
+        } else {
+          await movePathsToFolder(activeData.paths ?? [activeData.path as string], overData.path);
+        }
+        return;
+      }
+
+      if (
+        sortCriteria.key === 'custom' &&
+        overData?.kind === 'image-drop' &&
+        activeData.path &&
+        overData.path &&
+        activeData.path !== overData.path
+      ) {
+        handleReorderImages(activeData.path, overData.path);
+      }
+    },
+    [copyPathsToFolder, dragDropAction, handleReorderImages, movePathsToFolder, sortCriteria.key],
+  );
+
+  const handleGlobalDragStart = useCallback(({ active }: DragStartEvent) => {
+    const activeData = active.data.current as { kind?: 'image'; path?: string; paths?: string[] } | undefined;
+    if (activeData?.kind !== 'image' || !activeData.path) {
+      setActiveImageDrag(null);
+      setDragDropAction('move');
+      return;
+    }
+
+    setDragDropAction('move');
+    setActiveImageDrag({
+      path: activeData.path,
+      paths: activeData.paths ?? [activeData.path],
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!activeImageDrag) {
+      return;
+    }
+
+    const updateAction = (event: KeyboardEvent) => {
+      setDragDropAction(event.altKey ? 'copy' : 'move');
+    };
+
+    const handleWindowBlur = () => {
+      setDragDropAction('move');
+    };
+
+    window.addEventListener('keydown', updateAction);
+    window.addEventListener('keyup', updateAction);
+    window.addEventListener('blur', handleWindowBlur);
+
+    return () => {
+      window.removeEventListener('keydown', updateAction);
+      window.removeEventListener('keyup', updateAction);
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, [activeImageDrag]);
+
   const calculateTargetRes = useCallback(() => {
     const baseTargetRes = appSettings?.editorPreviewResolution || 1920;
     if (!(appSettings?.enableZoomHifi ?? true) || displaySize.width === 0) {
@@ -5322,6 +5520,7 @@ function App() {
       copiedFilePaths,
       handleCollectionContextMenu,
       handleSelectCollection,
+      movePathsToFolder,
       isFullScreen,
       isInstantTransition,
       folderTreeCollectionsSplitRatio,
@@ -5345,6 +5544,7 @@ function App() {
               aiModelDownloadStatus={aiModelDownloadStatus}
               appSettings={appSettings}
               currentFolderPath={currentFolderPath}
+              draggingPaths={activeImageDrag?.paths ?? []}
               filterCriteria={filterCriteria}
               imageList={sortedImageList}
               imageRatings={imageRatings}
@@ -5364,7 +5564,6 @@ function App() {
               onGoHome={handleGoHome}
               onImageClick={handleLibraryImageSingleClick}
               onImageDoubleClick={handleImageSelect}
-              onReorderImages={handleReorderImages}
               onLibraryRefresh={handleLibraryRefresh}
               onOpenFolder={handleOpenFolder}
               onSettingsChange={handleSettingsChange}
@@ -5764,12 +5963,22 @@ function App() {
   };
 
   return (
-    <div
-      className={clsx(
-        'flex flex-col h-screen bg-bg-primary font-sans text-text-primary overflow-hidden select-none',
-        (appSettings?.adaptiveEditorTheme || isAnimatingTheme) && !isInstantTransition && 'enable-color-transitions',
-      )}
+    <DndContext
+      collisionDetection={pointerWithin}
+      sensors={dndSensors}
+      onDragCancel={() => {
+        setActiveImageDrag(null);
+        setDragDropAction('move');
+      }}
+      onDragEnd={handleGlobalDragEnd}
+      onDragStart={handleGlobalDragStart}
     >
+      <div
+        className={clsx(
+          'flex flex-col h-screen bg-bg-primary font-sans text-text-primary overflow-hidden select-none',
+          (appSettings?.adaptiveEditorTheme || isAnimatingTheme) && !isInstantTransition && 'enable-color-transitions',
+        )}
+      >
       <div
         className={clsx(
           'flex-shrink-0 overflow-hidden z-50',
@@ -5989,7 +6198,13 @@ function App() {
           )
         }
       />
-    </div>
+        <DragOverlay dropAnimation={null}>
+          {activeImageDrag ? (
+            <ImageDragOverlay activeDrag={activeImageDrag} action={dragDropAction} thumbnails={thumbnails} />
+          ) : null}
+        </DragOverlay>
+      </div>
+    </DndContext>
   );
 }
 
