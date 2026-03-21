@@ -19,7 +19,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { motion, AnimatePresence } from 'framer-motion';
 import { List, useListCallbackRef } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
@@ -74,6 +74,7 @@ interface MainLibraryProps {
   aiModelDownloadStatus: string | null;
   appSettings: AppSettings | null;
   currentFolderPath: string | null;
+  draggingPaths: string[];
   filterCriteria: FilterCriteria;
   imageList: Array<ImageFile>;
   imageRatings: Record<string, number>;
@@ -93,7 +94,6 @@ interface MainLibraryProps {
   onGoHome(): void;
   onImageClick(path: string, event: React.MouseEvent): void;
   onImageDoubleClick(path: string): void;
-  onReorderImages(draggedPath: string, targetPath: string): void;
   onLibraryRefresh(): void;
   onOpenFolder(): void;
   onSettingsChange(settings: AppSettings): Promise<void>;
@@ -137,7 +137,7 @@ interface ImageLayer {
 interface ThumbnailProps {
   data: string | undefined;
   isActive: boolean;
-  isDraggable?: boolean;
+  isDragGhost?: boolean;
   isSelected: boolean;
   onContextMenu(e: any): void;
   onImageClick(path: string, event: any): void;
@@ -904,7 +904,7 @@ function ViewOptionsDropdown({
 function Thumbnail({
   data,
   isActive,
-  isDraggable: _isDraggable = false,
+  isDragGhost = false,
   isSelected,
   onContextMenu,
   onImageClick,
@@ -998,7 +998,7 @@ function Thumbnail({
       onContextMenu={onContextMenu}
       onDoubleClick={() => onImageDoubleClick(path)}
     >
-      {layers.length > 0 && (
+      {!isDragGhost && layers.length > 0 && (
         <div className="absolute inset-0 w-full h-full">
           {layers.map((layer) => (
             <div
@@ -1014,6 +1014,7 @@ function Thumbnail({
                 <img
                   alt=""
                   className="absolute inset-0 w-full h-full object-cover blur-md scale-110 brightness-[0.4]"
+                  draggable={false}
                   src={layer.url}
                 />
               )}
@@ -1023,6 +1024,7 @@ function Thumbnail({
                   thumbnailAspectRatio === ThumbnailAspectRatio.Contain ? 'object-contain' : 'object-cover'
                 } relative`}
                 decoding="async"
+                draggable={false}
                 loading="lazy"
                 src={layer.url}
               />
@@ -1032,7 +1034,7 @@ function Thumbnail({
       )}
 
       <AnimatePresence>
-        {layers.length === 0 && showPlaceholder && (
+        {!isDragGhost && layers.length === 0 && showPlaceholder && (
           <motion.div
             className="absolute inset-0 w-full h-full flex items-center justify-center bg-surface"
             initial={{ opacity: 0 }}
@@ -1045,7 +1047,9 @@ function Thumbnail({
         )}
       </AnimatePresence>
 
-      {(colorLabel || rating > 0) && (
+      {isDragGhost && <div className="absolute inset-0 bg-surface" />}
+
+      {!isDragGhost && (colorLabel || rating > 0) && (
         <div className="absolute top-1.5 right-1.5 bg-bg-primary/50 rounded-full px-1.5 py-0.5 flex items-center gap-1 backdrop-blur-sm">
           {colorLabel && (
             <div
@@ -1064,23 +1068,25 @@ function Thumbnail({
           )}
         </div>
       )}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2 flex items-end justify-between">
-        <Text variant={TextVariants.small} color={TextColors.white} className="truncate pr-2">
-          {baseName}
-        </Text>
-        {isVirtualCopy && (
-          <Text
-            as="div"
-            variant={TextVariants.small}
-            color={TextColors.white}
-            weight={TextWeights.bold}
-            className="flex-shrink-0 bg-bg-primary/50 px-1.5 py-0.5 rounded-full backdrop-blur-sm"
-            data-tooltip="Virtual Copy"
-          >
-            VC
+      {!isDragGhost && (
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2 flex items-end justify-between">
+          <Text variant={TextVariants.small} color={TextColors.white} className="truncate pr-2">
+            {baseName}
           </Text>
-        )}
-      </div>
+          {isVirtualCopy && (
+            <Text
+              as="div"
+              variant={TextVariants.small}
+              color={TextColors.white}
+              weight={TextWeights.bold}
+              className="flex-shrink-0 bg-bg-primary/50 px-1.5 py-0.5 rounded-full backdrop-blur-sm"
+              data-tooltip="Virtual Copy"
+            >
+              VC
+            </Text>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1090,6 +1096,7 @@ const Row = ({
   style,
   rows,
   activePath,
+  draggingPaths,
   multiSelectedPaths,
   onContextMenu,
   onImageClick,
@@ -1167,6 +1174,8 @@ const Row = ({
           itemWidth={itemWidth}
           isCustomOrder={isCustomOrder}
           activePath={activePath}
+          currentFolderPath={rootPath}
+          draggingPaths={draggingPaths}
           multiSelectedPaths={multiSelectedPaths}
           onContextMenu={onContextMenu}
           onImageClick={onImageClick}
@@ -1186,6 +1195,8 @@ const DraggableThumbnailTile = ({
   itemWidth,
   isCustomOrder,
   activePath,
+  currentFolderPath,
+  draggingPaths,
   multiSelectedPaths,
   onContextMenu,
   onImageClick,
@@ -1196,6 +1207,8 @@ const DraggableThumbnailTile = ({
   imageRatings,
 }: {
   activePath: string | null;
+  currentFolderPath: string | null;
+  draggingPaths: string[];
   imageFile: ImageFile;
   imageRatings: Record<string, number>;
   isCustomOrder: boolean;
@@ -1208,12 +1221,24 @@ const DraggableThumbnailTile = ({
   thumbnailAspectRatio: ThumbnailAspectRatio;
   thumbnails: Record<string, string>;
 }) => {
+  const isDragGhost = draggingPaths.includes(imageFile.path);
+  const draggedPaths =
+    multiSelectedPaths.includes(imageFile.path) && multiSelectedPaths.length > 0 ? multiSelectedPaths : [imageFile.path];
   const { attributes, listeners, setNodeRef: setDraggableRef, transform, isDragging } = useDraggable({
-    id: imageFile.path,
-    disabled: !isCustomOrder,
+    id: `image:${imageFile.path}`,
+    data: {
+      kind: 'image',
+      path: imageFile.path,
+      paths: draggedPaths,
+      sourceFolder: currentFolderPath,
+    },
   });
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
-    id: imageFile.path,
+    id: `image-drop:${imageFile.path}`,
+    data: {
+      kind: 'image-drop',
+      path: imageFile.path,
+    },
     disabled: !isCustomOrder,
   });
 
@@ -1231,17 +1256,17 @@ const DraggableThumbnailTile = ({
       style={{
         width: itemWidth,
         height: itemWidth,
-        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-        opacity: isDragging ? 0.6 : 1,
+        transform: isCustomOrder && transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        opacity: isCustomOrder && isDragging ? 0.18 : 1,
       }}
       className={isOver && isCustomOrder ? 'ring-2 ring-accent rounded-md' : ''}
-      {...(isCustomOrder ? attributes : {})}
-      {...(isCustomOrder ? listeners : {})}
+      {...attributes}
+      {...listeners}
     >
       <Thumbnail
         data={thumbnails[imageFile.path]}
         isActive={activePath === imageFile.path}
-        isDraggable={isCustomOrder}
+        isDragGhost={isDragGhost}
         isSelected={multiSelectedPaths.includes(imageFile.path)}
         onContextMenu={(e: React.MouseEvent) => onContextMenu(e, imageFile.path)}
         onImageClick={onImageClick}
@@ -1261,6 +1286,7 @@ export default function MainLibrary({
   aiModelDownloadStatus,
   appSettings,
   currentFolderPath,
+  draggingPaths,
   filterCriteria,
   imageList,
   imageRatings,
@@ -1280,7 +1306,6 @@ export default function MainLibrary({
   onGoHome,
   onImageClick,
   onImageDoubleClick,
-  onReorderImages,
   onLibraryRefresh,
   onOpenFolder,
   onSettingsChange,
@@ -1310,7 +1335,6 @@ export default function MainLibrary({
   const [latestVersion, setLatestVersion] = useState('');
   const [isLoaderVisible, setIsLoaderVisible] = useState(false);
   const loadedThumbnailsRef = useRef(new Set<string>());
-  const sensors = useSensors(useSensor(PointerSensor));
 
   const prevScrollState = useRef({
     path: null as string | null,
@@ -1823,44 +1847,37 @@ export default function MainLibrary({
                 return rows[index].type === 'header' ? headerHeight : rowHeight;
               };
 
-              return (
-                <DndContext
-                  sensors={sensors}
-                  onDragEnd={({ active, over }) => {
-                    if (sortCriteria.key !== 'custom') return;
-                    if (!over || active.id === over.id) return;
-                    onReorderImages(String(active.id), String(over.id));
-                  }}
-                >
-                  <div key={`${width}-${thumbnailSize}-${libraryViewMode}`} style={{ height, width }}>
-                    <List
-                      listRef={setListHandle}
-                      rowCount={rows.length}
-                      rowHeight={getItemSize}
-                      onScroll={(e: React.UIEvent<HTMLElement>) => setLibraryScrollTop(e.currentTarget.scrollTop)}
-                      className="custom-scrollbar"
-                      rowComponent={Row}
-                      rowProps={{
-                        rows,
-                        activePath,
-                        multiSelectedPaths,
-                        onContextMenu,
-                        onImageClick,
-                        onImageDoubleClick,
-                        thumbnails,
-                        thumbnailAspectRatio,
-                        loadedThumbnails: loadedThumbnailsRef.current,
-                        imageRatings,
-                        rootPath: currentFolderPath,
-                        itemWidth,
-                        outerPadding: OUTER_PADDING,
-                        gap: ITEM_GAP,
-                        isCustomOrder: sortCriteria.key === 'custom',
-                      }}
-                    />
-                  </div>
-                </DndContext>
+              const listContent = (
+                <div key={`${width}-${thumbnailSize}-${libraryViewMode}`} style={{ height, width }}>
+                  <List
+                    listRef={setListHandle}
+                    rowCount={rows.length}
+                    rowHeight={getItemSize}
+                    onScroll={(e: React.UIEvent<HTMLElement>) => setLibraryScrollTop(e.currentTarget.scrollTop)}
+                    className="custom-scrollbar"
+                    rowComponent={Row}
+                    rowProps={{
+                      rows,
+                      activePath,
+                      draggingPaths,
+                      multiSelectedPaths,
+                      onContextMenu,
+                      onImageClick,
+                      onImageDoubleClick,
+                      thumbnails,
+                      thumbnailAspectRatio,
+                      loadedThumbnails: loadedThumbnailsRef.current,
+                      imageRatings,
+                      rootPath: currentFolderPath,
+                      itemWidth,
+                      outerPadding: OUTER_PADDING,
+                      gap: ITEM_GAP,
+                      isCustomOrder: sortCriteria.key === 'custom',
+                    }}
+                  />
+                </div>
               );
+              return listContent;
             }}
           </AutoSizer>
         </div>
