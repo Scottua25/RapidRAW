@@ -36,6 +36,29 @@ fn is_linear_raw_format(raw_image: &RawImage) -> bool {
     )
 }
 
+fn projected_default_crop_is_invalid(raw_image: &RawImage) -> bool {
+    let Some(mut crop) = raw_image.crop_area else {
+        return false;
+    };
+    let Some(active_area) = raw_image.active_area else {
+        return false;
+    };
+
+    let current_dim = raw_image.dim();
+    let original_width = active_area.d.w;
+
+    if original_width == 0 || current_dim.w == 0 || current_dim.h == 0 {
+        return false;
+    }
+
+    let scale_factor = current_dim.w as f32 / original_width as f32;
+    if (scale_factor - 1.0).abs() > 1e-6 {
+        crop.scale(scale_factor);
+    }
+
+    crop.p.x + crop.d.w > current_dim.w || crop.p.y + crop.d.h > current_dim.h
+}
+
 #[inline]
 fn srgb_to_linear(value: f32) -> f32 {
     if value <= 0.04045 {
@@ -110,6 +133,22 @@ fn develop_internal(
                 && step != ProcessingStep::Demosaic
                 && (apply_calibration || step != ProcessingStep::Calibrate)
         });
+
+        if developer.steps.contains(&ProcessingStep::CropDefault)
+            && projected_default_crop_is_invalid(&raw_image)
+        {
+            log::warn!(
+                "Skipping default crop for RAW '{} {}' because the projected crop would exceed the current linear RAW bounds (raw dim: {:?}, active area: {:?}, crop area: {:?})",
+                raw_image.clean_make,
+                raw_image.clean_model,
+                raw_image.dim(),
+                raw_image.active_area,
+                raw_image.crop_area
+            );
+            developer
+                .steps
+                .retain(|&step| step != ProcessingStep::CropDefault);
+        }
     } else if fast_demosaic {
         developer.demosaic_algorithm = DemosaicAlgorithm::Speed;
         developer.steps.retain(|&step| step != ProcessingStep::SRgb);
