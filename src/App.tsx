@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type MouseEvent as ReactMouseEvent } from 'react';
 import {
+  AutoScrollActivator,
   DndContext,
   DragOverlay,
   PointerSensor,
@@ -243,6 +244,9 @@ interface ActiveImageDragState {
 }
 
 type DragDropAction = 'move' | 'copy';
+type ActiveDropTarget = { kind: 'folder' | 'collection' | 'collection-create'; name?: string; path?: string } | null;
+type ActiveScrollRegion = 'folders' | 'collections' | null;
+type DragPointerPosition = { x: number; y: number } | null;
 
 const RIGHT_PANEL_ORDER = [
   Panel.Metadata,
@@ -259,10 +263,12 @@ const DEBUG = false;
 function ImageDragOverlay({
   activeDrag,
   action,
+  dropTarget,
   thumbnails,
 }: {
   activeDrag: ActiveImageDragState;
   action: DragDropAction;
+  dropTarget: ActiveDropTarget;
   thumbnails: Record<string, string>;
 }) {
   const previewPaths = activeDrag.paths.slice(0, 3);
@@ -271,6 +277,14 @@ function ImageDragOverlay({
     { rotate: -3, x: -5, y: 5, opacity: 0.7 },
     { rotate: 0, x: 0, y: 0, opacity: 1 },
   ];
+  const actionLabel =
+    dropTarget?.kind === 'collection'
+      ? `Add to ${dropTarget.name ?? 'collection'}`
+      : dropTarget?.kind === 'collection-create'
+        ? 'Create collection'
+      : action === 'copy'
+        ? 'Copy here'
+        : 'Move here';
 
   return (
     <div className="relative w-24 h-24 pointer-events-none">
@@ -304,7 +318,7 @@ function ImageDragOverlay({
       )}
 
       <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 px-3 h-7 rounded-full bg-bg-primary/90 border border-white/10 text-xs font-semibold text-text-primary flex items-center justify-center shadow-lg backdrop-blur-sm whitespace-nowrap">
-        {action === 'copy' ? 'Copy here' : 'Move here'}
+        {actionLabel}
       </div>
     </div>
   );
@@ -414,7 +428,10 @@ function App() {
   const [supportedTypes, setSupportedTypes] = useState<SupportedTypes | null>(null);
   const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
   const [activeImageDrag, setActiveImageDrag] = useState<ActiveImageDragState | null>(null);
+  const [activeDropTarget, setActiveDropTarget] = useState<ActiveDropTarget>(null);
+  const [activeScrollRegion, setActiveScrollRegion] = useState<ActiveScrollRegion>(null);
   const [dragDropAction, setDragDropAction] = useState<DragDropAction>('move');
+  const dragPointerPositionRef = useRef<DragPointerPosition>(null);
   const selectedImagePathRef = useRef<string | null>(null);
   useEffect(() => {
     selectedImagePathRef.current = selectedImage?.path ?? null;
@@ -3186,6 +3203,8 @@ function App() {
     async ({ active, over }: DragEndEvent) => {
       const action = dragDropAction;
       setActiveImageDrag(null);
+      setActiveDropTarget(null);
+      setActiveScrollRegion(null);
       setDragDropAction('move');
 
       if (!over) {
@@ -3193,9 +3212,13 @@ function App() {
       }
 
       const activeData = active.data.current as
-        | { kind?: 'image'; path?: string; paths?: string[]; sourceFolder?: string | null }
+        | { kind?: 'image'; path?: string; paths?: string[]; sourceCollection?: string | null; sourceFolder?: string | null }
         | undefined;
-      const overData = over.data.current as { kind?: 'folder' | 'image-drop'; path?: string } | undefined;
+      const overData = over.data.current as
+        | { kind?: 'folder' | 'image-drop'; path?: string }
+        | { kind?: 'collection'; name?: string }
+        | { kind?: 'collection-create' }
+        | undefined;
 
       if (activeData?.kind !== 'image') {
         return;
@@ -3213,6 +3236,19 @@ function App() {
         return;
       }
 
+      if (overData?.kind === 'collection' && overData.name) {
+        if ((activeData.sourceCollection ?? null) === overData.name) {
+          return;
+        }
+        await handleAddPathsToCollection(activeData.paths ?? [activeData.path as string], overData.name);
+        return;
+      }
+
+      if (overData?.kind === 'collection-create') {
+        await handleCreateCollectionAndAdd(activeData.paths ?? [activeData.path as string]);
+        return;
+      }
+
       if (
         sortCriteria.key === 'custom' &&
         overData?.kind === 'image-drop' &&
@@ -3223,17 +3259,42 @@ function App() {
         handleReorderImages(activeData.path, overData.path);
       }
     },
-    [copyPathsToFolder, dragDropAction, handleReorderImages, movePathsToFolder, sortCriteria.key],
+    [
+      copyPathsToFolder,
+      dragDropAction,
+      handleAddPathsToCollection,
+      handleCreateCollectionAndAdd,
+      handleReorderImages,
+      movePathsToFolder,
+      sortCriteria.key,
+    ],
   );
 
-  const handleGlobalDragStart = useCallback(({ active }: DragStartEvent) => {
+  const handleGlobalDragStart = useCallback(({ active, activatorEvent }: DragStartEvent) => {
     const activeData = active.data.current as { kind?: 'image'; path?: string; paths?: string[] } | undefined;
     if (activeData?.kind !== 'image' || !activeData.path) {
       setActiveImageDrag(null);
+      setActiveDropTarget(null);
+      setActiveScrollRegion(null);
       setDragDropAction('move');
+      dragPointerPositionRef.current = null;
       return;
     }
 
+    if (
+      activatorEvent &&
+      'clientX' in activatorEvent &&
+      'clientY' in activatorEvent &&
+      typeof activatorEvent.clientX === 'number' &&
+      typeof activatorEvent.clientY === 'number'
+    ) {
+      dragPointerPositionRef.current = { x: activatorEvent.clientX, y: activatorEvent.clientY };
+    } else {
+      dragPointerPositionRef.current = null;
+    }
+
+    setActiveDropTarget(null);
+    setActiveScrollRegion(null);
     setDragDropAction('move');
     setActiveImageDrag({
       path: activeData.path,
@@ -3264,6 +3325,103 @@ function App() {
       window.removeEventListener('blur', handleWindowBlur);
     };
   }, [activeImageDrag]);
+
+  useEffect(() => {
+    if (!activeImageDrag) {
+      setActiveScrollRegion(null);
+      dragPointerPositionRef.current = null;
+      return;
+    }
+
+    const syncScrollRegion = () => {
+      const point = dragPointerPositionRef.current;
+      if (!point) {
+        setActiveScrollRegion(null);
+        return;
+      }
+
+      const hovered = document.elementFromPoint(point.x, point.y) as HTMLElement | null;
+      const region = hovered?.closest('[data-dnd-scroll-region]')?.getAttribute('data-dnd-scroll-region');
+
+      if (region === 'folders' || region === 'collections') {
+        setActiveScrollRegion(region);
+        return;
+      }
+
+      setActiveScrollRegion(null);
+    };
+
+    const updateFromPointer = (event: PointerEvent) => {
+      dragPointerPositionRef.current = { x: event.clientX, y: event.clientY };
+      syncScrollRegion();
+    };
+
+    const updateFromScroll = () => {
+      syncScrollRegion();
+    };
+
+    syncScrollRegion();
+
+    window.addEventListener('pointermove', updateFromPointer, { passive: true });
+    window.addEventListener('scroll', updateFromScroll, true);
+
+    return () => {
+      window.removeEventListener('pointermove', updateFromPointer);
+      window.removeEventListener('scroll', updateFromScroll, true);
+      dragPointerPositionRef.current = null;
+      setActiveScrollRegion(null);
+    };
+  }, [activeImageDrag]);
+
+  const handleGlobalDragOver = useCallback(({ over }: { over: { data: { current?: unknown } } | null }) => {
+    if (!over?.data.current) {
+      setActiveDropTarget(null);
+      return;
+    }
+
+    const overData = over.data.current as
+      | { kind?: 'folder'; path?: string }
+      | { kind?: 'collection'; name?: string }
+      | { kind?: 'collection-create' }
+      | { kind?: 'image-drop'; path?: string };
+
+    if (overData.kind === 'collection' && overData.name) {
+      setActiveDropTarget({ kind: 'collection', name: overData.name });
+      return;
+    }
+
+    if (overData.kind === 'folder' && overData.path) {
+      setActiveDropTarget({ kind: 'folder', path: overData.path });
+      return;
+    }
+
+    if (overData.kind === 'collection-create') {
+      setActiveDropTarget({ kind: 'collection-create' });
+      return;
+    }
+
+    setActiveDropTarget(null);
+  }, []);
+
+  const dragAutoScroll = useMemo(
+    () => ({
+      activator: AutoScrollActivator.Pointer,
+      canScroll: (element: Element) => {
+        const region = (element as HTMLElement).closest('[data-dnd-scroll-region]')?.getAttribute('data-dnd-scroll-region');
+
+        if (activeScrollRegion === 'collections') {
+          return region === 'collections';
+        }
+
+        if (activeScrollRegion === 'folders') {
+          return region === 'folders';
+        }
+
+        return region !== 'collections';
+      },
+    }),
+    [activeScrollRegion],
+  );
 
   const calculateTargetRes = useCallback(() => {
     const baseTargetRes = appSettings?.editorPreviewResolution || 1920;
@@ -5964,12 +6122,17 @@ function App() {
 
   return (
     <DndContext
+      autoScroll={dragAutoScroll}
       collisionDetection={pointerWithin}
       sensors={dndSensors}
       onDragCancel={() => {
         setActiveImageDrag(null);
+        setActiveDropTarget(null);
+        setActiveScrollRegion(null);
         setDragDropAction('move');
+        dragPointerPositionRef.current = null;
       }}
+      onDragOver={handleGlobalDragOver}
       onDragEnd={handleGlobalDragEnd}
       onDragStart={handleGlobalDragStart}
     >
@@ -6200,7 +6363,12 @@ function App() {
       />
         <DragOverlay dropAnimation={null}>
           {activeImageDrag ? (
-            <ImageDragOverlay activeDrag={activeImageDrag} action={dragDropAction} thumbnails={thumbnails} />
+            <ImageDragOverlay
+              activeDrag={activeImageDrag}
+              action={dragDropAction}
+              dropTarget={activeDropTarget}
+              thumbnails={thumbnails}
+            />
           ) : null}
         </DragOverlay>
       </div>
