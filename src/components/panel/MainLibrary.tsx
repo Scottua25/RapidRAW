@@ -1459,6 +1459,18 @@ export default function MainLibrary({
   }, [listHandle]);
 
   useEffect(() => {
+    if (!listHandle?.element) {
+      return;
+    }
+
+    listHandle.element.setAttribute('data-dnd-scroll-region', 'grid');
+
+    return () => {
+      listHandle.element?.removeAttribute('data-dnd-scroll-region');
+    };
+  }, [listHandle]);
+
+  useEffect(() => {
     const exifEnabled = appSettings?.enableExifReading ?? true;
     const exifSortKeys = ['date_taken', 'iso', 'shutter_speed', 'aperture', 'focal_length'];
     const isCurrentSortExif = exifSortKeys.includes(sortCriteria.key);

@@ -157,11 +157,13 @@ function CollectionRow({ collection, isSelected, onClick, onContextMenu }: Colle
 function CollectionDropZone({
   children,
   className,
+  dataDndScrollRegion,
   isActive,
   style,
 }: {
   children: ReactNode;
   className?: string;
+  dataDndScrollRegion?: 'collections';
   isActive: boolean;
   style?: CSSProperties;
 }) {
@@ -175,6 +177,7 @@ function CollectionDropZone({
   return (
     <div
       ref={setNodeRef}
+      data-dnd-scroll-region={dataDndScrollRegion}
       className={clsx('rounded-md transition-colors', className, {
         'ring-1 ring-dashed ring-accent bg-accent/5': isOver && isActive,
       })}
@@ -674,9 +677,8 @@ export default function FolderTree({
                   onMouseDown={handleSplitterMouseDown}
                   data-tooltip="Resize Base Folder / Collections"
                 />
-                <CollectionDropZone
+                <div
                   className="min-h-0 flex flex-col bg-surface rounded-lg border border-border-color/30 overflow-hidden"
-                  isActive={isCollectionsOpen}
                   style={{ flexBasis: `${(1 - topPaneRatio) * 100}%` }}
                 >
                   <div className="px-1 pt-1 border-b border-border-color/20 bg-bg-secondary/40">
@@ -695,27 +697,30 @@ export default function FolderTree({
                         transition={{ duration: 0.2, ease: 'easeInOut' }}
                         className="overflow-hidden min-h-0 flex-1"
                       >
-                        <div
-                          className="h-full min-h-full overflow-y-auto custom-scrollbar px-1 pb-1"
-                          data-dnd-scroll-region="collections"
-                        >
-                          <div className="pt-1 pb-2 min-h-full flex flex-col">
-                            {collections.map((collection) => (
-                              <CollectionRow
-                                key={collection.name}
-                                collection={collection}
-                                isSelected={selectedCollectionName === collection.name}
-                                onClick={() => onCollectionSelect?.(collection.name)}
-                                onContextMenu={(e: ReactMouseEvent) => onCollectionContextMenu?.(e, collection.name)}
-                              />
-                            ))}
-                            <div className="flex-1 min-h-8" />
-                          </div>
+                        <div className="h-full min-h-full px-1 pb-1">
+                          <CollectionDropZone
+                            className="h-full min-h-full overflow-y-auto custom-scrollbar"
+                            dataDndScrollRegion="collections"
+                            isActive={isCollectionsOpen}
+                          >
+                            <div className="pt-1 pb-2 min-h-full flex flex-col">
+                              {collections.map((collection) => (
+                                <CollectionRow
+                                  key={collection.name}
+                                  collection={collection}
+                                  isSelected={selectedCollectionName === collection.name}
+                                  onClick={() => onCollectionSelect?.(collection.name)}
+                                  onContextMenu={(e: ReactMouseEvent) => onCollectionContextMenu?.(e, collection.name)}
+                                />
+                              ))}
+                              <div className="flex-1 min-h-8" />
+                            </div>
+                          </CollectionDropZone>
                         </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
-                </CollectionDropZone>
+                </div>
               </>
             )}
           </div>
