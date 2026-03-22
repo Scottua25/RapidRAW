@@ -38,6 +38,17 @@
   <url type="homepage">https://github.com/Scottua25/RapidRAW</url>
 
   <releases>
+    <release version="v1.5.2-scottua.2" date="2026-03-22">
+        <url type="details">https://github.com/Scottua25/RapidRAW/releases/tag/v1.5.2-scottua.2</url>
+        <description translate="no">
+            <p>Fork release</p>
+            <ul>
+                <li>Add drag and drop moving/copying of images into folders, including sidecar-aware file operations.</li>
+                <li>Add drag and drop adding to existing collections or creating new collections from the left pane.</li>
+                <li>Refine pane-scoped drag targeting and autoscroll for grid, folder, and collection interactions.</li>
+            </ul>
+        </description>
+    </release>
     <release version="v1.5.2-scottua.1" date="2026-03-20">
         <url type="details">https://github.com/Scottua25/RapidRAW/releases/tag/v1.5.2-scottua.1</url>
         <description translate="no">
