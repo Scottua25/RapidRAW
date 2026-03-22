@@ -1098,6 +1098,7 @@ const Row = ({
   activePath,
   draggingPaths,
   multiSelectedPaths,
+  selectedCollectionName,
   onContextMenu,
   onImageClick,
   onImageDoubleClick,
@@ -1177,6 +1178,7 @@ const Row = ({
           currentFolderPath={rootPath}
           draggingPaths={draggingPaths}
           multiSelectedPaths={multiSelectedPaths}
+          selectedCollectionName={selectedCollectionName}
           onContextMenu={onContextMenu}
           onImageClick={onImageClick}
           onImageDoubleClick={onImageDoubleClick}
@@ -1198,6 +1200,7 @@ const DraggableThumbnailTile = ({
   currentFolderPath,
   draggingPaths,
   multiSelectedPaths,
+  selectedCollectionName,
   onContextMenu,
   onImageClick,
   onImageDoubleClick,
@@ -1215,6 +1218,7 @@ const DraggableThumbnailTile = ({
   itemWidth: number;
   loadedThumbnails: Set<string>;
   multiSelectedPaths: string[];
+  selectedCollectionName?: string | null;
   onContextMenu(event: React.MouseEvent, path: string): void;
   onImageClick(path: string, event: React.MouseEvent): void;
   onImageDoubleClick(path: string): void;
@@ -1230,6 +1234,7 @@ const DraggableThumbnailTile = ({
       kind: 'image',
       path: imageFile.path,
       paths: draggedPaths,
+      sourceCollection: selectedCollectionName,
       sourceFolder: currentFolderPath,
     },
   });
@@ -1451,6 +1456,18 @@ export default function MainLibrary({
     if (listHandle?.element && libraryScrollTop > 0) {
       listHandle.element.scrollTop = libraryScrollTop;
     }
+  }, [listHandle]);
+
+  useEffect(() => {
+    if (!listHandle?.element) {
+      return;
+    }
+
+    listHandle.element.setAttribute('data-dnd-scroll-region', 'grid');
+
+    return () => {
+      listHandle.element?.removeAttribute('data-dnd-scroll-region');
+    };
   }, [listHandle]);
 
   useEffect(() => {
@@ -1861,6 +1878,7 @@ export default function MainLibrary({
                       activePath,
                       draggingPaths,
                       multiSelectedPaths,
+                      selectedCollectionName,
                       onContextMenu,
                       onImageClick,
                       onImageDoubleClick,
