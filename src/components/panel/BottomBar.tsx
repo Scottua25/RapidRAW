@@ -3,7 +3,13 @@ import { Star, Copy, ClipboardPaste, RotateCcw, ChevronUp, ChevronDown, Check, S
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import Filmstrip from './Filmstrip';
-import { GLOBAL_KEYS, ImageFile, SelectedImage, ThumbnailAspectRatio } from '../ui/AppProperties';
+import {
+  GLOBAL_KEYS,
+  ImageFile,
+  LibraryPresentationMode,
+  SelectedImage,
+  ThumbnailAspectRatio,
+} from '../ui/AppProperties';
 
 interface BottomBarProps {
   filmstripHeight?: number;
@@ -20,14 +26,19 @@ interface BottomBarProps {
   isRatingDisabled?: boolean;
   isResetDisabled?: boolean;
   isResizing?: boolean;
+  isLibraryLoupeZoomActive?: boolean;
+  libraryPresentationMode?: LibraryPresentationMode;
+  libraryLoupeZoom?: number;
   multiSelectedPaths?: Array<string>;
   onClearSelection?(): void;
   onContextMenu?(event: any, path: string): void;
   onCopy(): void;
   onExportClick?(): void;
   onImageSelect?(path: string, event: any): void;
+  onLibraryLoupeZoomChange?(zoomValue: number): void;
   onOpenCopyPasteSettings?(): void;
   onPaste(): void;
+  onLibraryPresentationModeChange?(mode: LibraryPresentationMode): void;
   onRate(rate: number): void;
   onReset?(): void;
   onZoomChange?(zoomValue: number, fitToWindow?: boolean): void;
@@ -47,6 +58,41 @@ interface StarRatingProps {
   disabled: boolean;
   onRate(rate: number): void;
   rating: number;
+}
+
+function LibraryPresentationModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: LibraryPresentationMode;
+  onChange(mode: LibraryPresentationMode): void;
+}) {
+  const options = [
+    { mode: LibraryPresentationMode.Grid, label: 'Grid' },
+    { mode: LibraryPresentationMode.Compare, label: 'Compare' },
+    { mode: LibraryPresentationMode.Loupe, label: 'Loupe' },
+  ];
+
+  return (
+    <div className="flex items-center rounded-lg bg-surface p-1">
+      {options.map((option) => {
+        const isActive = option.mode === mode;
+        return (
+          <button
+            key={option.mode}
+            className={clsx(
+              'px-2.5 py-1 text-xs rounded-md transition-colors',
+              isActive ? 'bg-card-active text-text-primary' : 'text-text-secondary hover:text-text-primary',
+            )}
+            onClick={() => onChange(option.mode)}
+            data-tooltip={`${option.label} View`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 const StarRating = ({ rating, onRate, disabled }: StarRatingProps) => {
@@ -95,14 +141,19 @@ export default function BottomBar({
   isRatingDisabled = false,
   isResetDisabled = false,
   isResizing,
+  isLibraryLoupeZoomActive = false,
+  libraryPresentationMode = LibraryPresentationMode.Grid,
+  libraryLoupeZoom = 1,
   multiSelectedPaths = [],
   onClearSelection,
   onContextMenu,
   onCopy,
   onExportClick,
   onImageSelect,
+  onLibraryLoupeZoomChange,
   onOpenCopyPasteSettings,
   onPaste,
+  onLibraryPresentationModeChange,
   onRate,
   onReset,
   onZoomChange = () => {},
@@ -134,6 +185,7 @@ export default function BottomBar({
   const numSelected = multiSelectedPaths.length;
   const total = totalImages ?? 0;
   const showSelectionCounter = numSelected > 1;
+  const showLibraryLoupeZoom = isLibraryView && libraryPresentationMode === LibraryPresentationMode.Loupe && isLibraryLoupeZoomActive;
 
   useEffect(() => {
     if (isZoomReady && !isDraggingSlider.current) {
@@ -261,6 +313,12 @@ export default function BottomBar({
         )}
       >
         <div className="flex items-center gap-4">
+          {isLibraryView && onLibraryPresentationModeChange && (
+            <>
+              <LibraryPresentationModeToggle mode={libraryPresentationMode} onChange={onLibraryPresentationModeChange} />
+              <div className="h-5 w-px bg-surface"></div>
+            </>
+          )}
           <StarRating rating={rating} onRate={onRate} disabled={isRatingDisabled} />
           <div className="h-5 w-px bg-surface"></div>
           <div className="flex items-center gap-2">
@@ -353,6 +411,35 @@ export default function BottomBar({
         <div className="flex-grow" />
         {isLibraryView ? (
           <div className="flex items-center gap-2">
+            {showLibraryLoupeZoom && onLibraryLoupeZoomChange && (
+              <>
+                <div className="flex items-center gap-2 w-56">
+                  <div className="relative w-12 h-full flex items-center justify-end">
+                    <span className="absolute right-0 text-xs text-text-secondary select-none text-right w-max">
+                      Zoom
+                    </span>
+                  </div>
+
+                  <div className="relative flex-1 h-5">
+                    <div className="absolute top-1/2 left-0 w-full h-1.5 -translate-y-1/2 bg-surface rounded-full pointer-events-none" />
+                    <input
+                      type="range"
+                      min={0.2}
+                      max={2.0}
+                      step="0.05"
+                      value={libraryLoupeZoom}
+                      onChange={(e) => onLibraryLoupeZoomChange(parseFloat(e.target.value))}
+                      className="absolute top-1/2 left-0 w-full h-1.5 -mt-[1.5px] appearance-none bg-transparent cursor-pointer p-0 slider-input z-10"
+                    />
+                  </div>
+
+                  <div className="text-xs text-text-secondary w-10 text-right flex items-center justify-end h-5">
+                    <span>{Math.round(libraryLoupeZoom * 100)}%</span>
+                  </div>
+                </div>
+                <div className="h-5 w-px bg-surface"></div>
+              </>
+            )}
             <button
               className="w-8 h-8 flex items-center justify-center rounded-md text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed"
               disabled={isResetDisabled}

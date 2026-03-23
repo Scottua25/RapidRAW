@@ -114,6 +114,7 @@ import {
   ImageFile,
   Option,
   OPTION_SEPARATOR,
+  LibraryPresentationMode,
   LibraryViewMode,
   Panel,
   Progress,
@@ -514,6 +515,11 @@ function App() {
     effects: false,
   });
   const [isLibraryExportPanelVisible, setIsLibraryExportPanelVisible] = useState(false);
+  const [libraryPresentationMode, setLibraryPresentationMode] = useState<LibraryPresentationMode>(
+    LibraryPresentationMode.Grid,
+  );
+  const [libraryLoupeZoom, setLibraryLoupeZoom] = useState(1);
+  const [isLibraryLoupeZoomActive, setIsLibraryLoupeZoomActive] = useState(false);
   const [libraryViewMode, setLibraryViewMode] = useState<LibraryViewMode>(LibraryViewMode.Flat);
   const [leftPanelWidth, setLeftPanelWidth] = useState<number>(256);
   const [rightPanelWidth, setRightPanelWidth] = useState<number>(320);
@@ -2026,6 +2032,9 @@ function App() {
         if (settings?.libraryViewMode) {
           setLibraryViewMode(settings.libraryViewMode);
         }
+        if (settings?.libraryPresentationMode) {
+          setLibraryPresentationMode(settings.libraryPresentationMode);
+        }
         if (settings?.thumbnailSize) {
           setThumbnailSize(settings.thumbnailSize);
         }
@@ -2122,6 +2131,22 @@ function App() {
       handleSettingsChange({ ...appSettings, libraryViewMode });
     }
   }, [libraryViewMode, appSettings, handleSettingsChange]);
+
+  useEffect(() => {
+    if (isInitialMount.current || !appSettings) {
+      return;
+    }
+    if (appSettings.libraryPresentationMode !== libraryPresentationMode) {
+      handleSettingsChange({ ...appSettings, libraryPresentationMode });
+    }
+  }, [libraryPresentationMode, appSettings, handleSettingsChange]);
+
+  useEffect(() => {
+    if (libraryPresentationMode !== LibraryPresentationMode.Loupe) {
+      setIsLibraryLoupeZoomActive(false);
+      setLibraryLoupeZoom(1);
+    }
+  }, [libraryPresentationMode]);
 
   useEffect(() => {
     invoke(Invokes.GetSupportedFileTypes)
@@ -2897,6 +2922,19 @@ function App() {
       title: modalTitle,
     });
   }, [multiSelectedPaths, executeDelete, imageList]);
+
+  const handleRemoveFromSelection = useCallback(
+    (pathToRemove: string) => {
+      setMultiSelectedPaths((prev) => {
+        const next = prev.filter((path) => path !== pathToRemove);
+        if (libraryActivePath === pathToRemove) {
+          setLibraryActivePath(next[0] ?? null);
+        }
+        return next;
+      });
+    },
+    [libraryActivePath],
+  );
 
   const handleToggleFullScreen = useCallback(() => {
     const currentlyZoomed = zoom > 1.01;
@@ -5899,7 +5937,10 @@ function App() {
               isThumbnailsLoading={isThumbnailsLoading}
               isLoading={isViewLoading}
               isTreeLoading={isTreeLoading}
+              isLibraryLoupeZoomActive={isLibraryLoupeZoomActive}
+              libraryLoupeZoom={libraryLoupeZoom}
               libraryScrollTop={libraryScrollTop}
+              libraryPresentationMode={libraryPresentationMode}
               libraryViewMode={libraryViewMode}
               multiSelectedPaths={multiSelectedPaths}
               onClearSelection={handleClearSelection}
@@ -5910,7 +5951,10 @@ function App() {
               onImageClick={handleLibraryImageSingleClick}
               onImageDoubleClick={handleImageSelect}
               onLibraryRefresh={handleLibraryRefresh}
+              onLibraryLoupeZoomActiveChange={setIsLibraryLoupeZoomActive}
+              onLibraryLoupeZoomChange={setLibraryLoupeZoom}
               onOpenFolder={handleOpenFolder}
+              onRemoveFromSelection={handleRemoveFromSelection}
               onSettingsChange={handleSettingsChange}
               onThumbnailAspectRatioChange={setThumbnailAspectRatio}
               onThumbnailSizeChange={setThumbnailSize}
@@ -5936,13 +5980,18 @@ function App() {
               isCopyDisabled={multiSelectedPaths.length !== 1}
               isExportDisabled={multiSelectedPaths.length === 0}
               isLibraryView={true}
+              isLibraryLoupeZoomActive={isLibraryLoupeZoomActive}
               isPasted={isPasted}
               isPasteDisabled={copiedAdjustments === null || multiSelectedPaths.length === 0}
               isRatingDisabled={multiSelectedPaths.length === 0}
               isResetDisabled={multiSelectedPaths.length === 0}
+              libraryLoupeZoom={libraryLoupeZoom}
+              libraryPresentationMode={libraryPresentationMode}
               multiSelectedPaths={multiSelectedPaths}
               onCopy={handleCopyAdjustments}
               onExportClick={() => setIsLibraryExportPanelVisible((prev) => !prev)}
+              onLibraryLoupeZoomChange={setLibraryLoupeZoom}
+              onLibraryPresentationModeChange={setLibraryPresentationMode}
               onOpenCopyPasteSettings={() => setIsCopyPasteSettingsModalOpen(true)}
               onPaste={() => handlePasteAdjustments()}
               onRate={handleRate}
@@ -5970,9 +6019,13 @@ function App() {
       isThumbnailsLoading,
       isViewLoading,
       isTreeLoading,
+      isLibraryLoupeZoomActive,
+      libraryLoupeZoom,
       libraryScrollTop,
+      libraryPresentationMode,
       libraryViewMode,
       multiSelectedPaths,
+      handleRemoveFromSelection,
       rootPath,
       searchCriteria,
       sortCriteria,
