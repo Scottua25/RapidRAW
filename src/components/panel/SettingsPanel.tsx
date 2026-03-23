@@ -1759,6 +1759,9 @@ export default function SettingsPanel({
                         <KeybindItem keys={['0-5']} description="Set star rating for selected image(s)" />
                         <KeybindItem keys={['Shift', '+', '0-5']} description="Set color label for selected image(s)" />
                         <KeybindItem keys={['↑', '↓', '←', '→']} description="Navigate images in library" />
+                        <KeybindItem keys={['G']} description="Switch to Grid view in Library" />
+                        <KeybindItem keys={['C']} description="Switch to Compare view in Library" />
+                        <KeybindItem keys={['L']} description="Switch to Loupe view in Library" />
                       </div>
                     </div>
                     <div>
