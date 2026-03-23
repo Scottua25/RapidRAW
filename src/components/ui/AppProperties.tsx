@@ -172,6 +172,7 @@ export interface AppSettings {
   } | null;
   pinnedFolders?: string[];
   lastRootPath: string | null;
+  libraryPresentationMode?: LibraryPresentationMode;
   libraryViewMode?: LibraryViewMode;
   sortCriteria?: SortCriteria;
   theme: Theme;
@@ -208,6 +209,12 @@ export enum LibraryViewMode {
   Flat = 'flat',
   Recursive = 'recursive',
   RecursiveGrouped = 'recursive-grouped',
+}
+
+export enum LibraryPresentationMode {
+  Grid = 'grid',
+  Compare = 'compare',
+  Loupe = 'loupe',
 }
 
 export interface FilterCriteria {
