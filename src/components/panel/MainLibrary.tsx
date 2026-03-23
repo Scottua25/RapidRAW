@@ -32,6 +32,7 @@ import {
   FilterCriteria,
   ImageFile,
   Invokes,
+  LibraryPresentationMode,
   LibraryViewMode,
   Progress,
   RawStatus,
@@ -90,8 +91,11 @@ interface MainLibraryProps {
   importState: ImportState;
   indexingProgress: Progress;
   isLoading: boolean;
+  isLibraryLoupeZoomActive: boolean;
   isIndexing: boolean;
   isTreeLoading: boolean;
+  libraryLoupeZoom: number;
+  libraryPresentationMode: LibraryPresentationMode;
   libraryScrollTop: number;
   libraryViewMode: LibraryViewMode;
   multiSelectedPaths: Array<string>;
@@ -104,7 +108,10 @@ interface MainLibraryProps {
   onImageDoubleClick(path: string): void;
   onReorderImages(draggedPath: string, targetPath: string): void;
   onLibraryRefresh(): void;
+  onLibraryLoupeZoomActiveChange(active: boolean): void;
+  onLibraryLoupeZoomChange(zoom: number): void;
   onOpenFolder(): void;
+  onRemoveFromSelection?(path: string): void;
   onSettingsChange(settings: AppSettings): Promise<void>;
   onThumbnailAspectRatioChange(aspectRatio: ThumbnailAspectRatio): void;
   onThumbnailSizeChange(size: ThumbnailSize): void;
@@ -147,6 +154,124 @@ interface ImageLayer {
   opacity: number;
 }
 
+type LibraryRow =
+  | { type: 'header'; path: string; count: number }
+  | { type: 'images'; images: ImageFile[]; startIndex: number }
+  | { type: 'footer' };
+
+function useHighQualityPreviewUrls(paths: string[], enabled: boolean, generationKey = 'default') {
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const previewUrlsRef = useRef<Record<string, string>>({});
+  const inFlightPathsRef = useRef<Set<string>>(new Set());
+  const activePathsRef = useRef<Set<string>>(new Set());
+  const loadedGenerationKeysRef = useRef<Record<string, string>>({});
+  const activeGenerationKeyRef = useRef(generationKey);
+
+  useEffect(() => {
+    previewUrlsRef.current = previewUrls;
+  }, [previewUrls]);
+
+  useEffect(() => {
+    activeGenerationKeyRef.current = generationKey;
+    activePathsRef.current = new Set(paths);
+
+    if (!enabled || paths.length === 0) {
+      inFlightPathsRef.current.clear();
+      loadedGenerationKeysRef.current = {};
+      setPreviewUrls((prev) => {
+        if (Object.keys(prev).length === 0) {
+          return prev;
+        }
+        Object.values(prev).forEach((url) => URL.revokeObjectURL(url));
+        return {};
+      });
+      return;
+    }
+
+    const nextPaths = new Set(paths);
+
+    setPreviewUrls((prev) => {
+      const next: Record<string, string> = {};
+      Object.entries(prev).forEach(([path, url]) => {
+        if (nextPaths.has(path)) {
+          next[path] = url;
+        } else {
+          delete loadedGenerationKeysRef.current[path];
+          URL.revokeObjectURL(url);
+        }
+      });
+      return next;
+    });
+  }, [enabled, generationKey, paths]);
+
+  useEffect(() => {
+    if (!enabled || paths.length === 0) {
+      return;
+    }
+
+    const nextPath = paths.find(
+      (path) =>
+        (!previewUrls[path] || loadedGenerationKeysRef.current[path] !== generationKey) &&
+        !inFlightPathsRef.current.has(path),
+    );
+
+    if (!nextPath) {
+      return;
+    }
+
+    inFlightPathsRef.current.add(nextPath);
+    const requestedGenerationKey = generationKey;
+
+    const timer = window.setTimeout(() => {
+      invoke<number[]>(Invokes.GeneratePreviewForPath, {
+        path: nextPath,
+        jsAdjustments: {},
+      })
+        .then((res) => {
+          const blob = new Blob([new Uint8Array(res)], { type: 'image/jpeg' });
+          const objectUrl = URL.createObjectURL(blob);
+
+          setPreviewUrls((prev) => {
+            if (!activePathsRef.current.has(nextPath) || activeGenerationKeyRef.current !== requestedGenerationKey) {
+              URL.revokeObjectURL(objectUrl);
+              return prev;
+            }
+
+            const previousUrl = prev[nextPath];
+            if (previousUrl) {
+              URL.revokeObjectURL(previousUrl);
+            }
+            loadedGenerationKeysRef.current[nextPath] = requestedGenerationKey;
+
+            return {
+              ...prev,
+              [nextPath]: objectUrl,
+            };
+          });
+        })
+        .catch((error) => {
+          console.error(`Failed to generate high-quality preview for ${nextPath}`, error);
+        })
+        .finally(() => {
+          inFlightPathsRef.current.delete(nextPath);
+        });
+    }, 120);
+
+    return () => {
+      window.clearTimeout(timer);
+      inFlightPathsRef.current.delete(nextPath);
+    };
+  }, [enabled, generationKey, paths, previewUrls]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(previewUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
+
+  return previewUrls;
+}
+
 interface ThumbnailProps {
   data: string | undefined;
   isActive: boolean;
@@ -157,6 +282,7 @@ interface ThumbnailProps {
   onImageDoubleClick(path: string): void;
   onLoad(): void;
   path: string;
+  presentation?: 'default' | 'frameless';
   rating: number;
   tags: Array<string>;
   aspectRatio: ThumbnailAspectRatio;
@@ -1637,6 +1763,367 @@ const DraggableThumbnailTile = ({
     </div>
   );
 };
+
+function StaticThumbnailTile({
+  imageData,
+  imageFile,
+  activePath,
+  multiSelectedPaths,
+  onContextMenu,
+  onImageClick,
+  onImageDoubleClick,
+  thumbnails,
+  thumbnailAspectRatio,
+  loadedThumbnails,
+  imageRatings,
+  className,
+  onRemoveFromSelection,
+  style,
+}: {
+  activePath: string | null;
+  className?: string;
+  imageData?: string;
+  imageFile: ImageFile;
+  imageRatings: Record<string, number>;
+  loadedThumbnails: Set<string>;
+  multiSelectedPaths: string[];
+  onContextMenu(event: React.MouseEvent, path: string): void;
+  onImageClick(path: string, event: React.MouseEvent): void;
+  onImageDoubleClick(path: string): void;
+  onRemoveFromSelection?(): void;
+  style?: React.CSSProperties;
+  thumbnailAspectRatio: ThumbnailAspectRatio;
+  thumbnails: Record<string, string>;
+}) {
+  return (
+    <div className={`relative ${className ?? ''}`} style={style}>
+      {onRemoveFromSelection && (
+        <button
+          className="absolute top-2 right-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-bg-primary/75 text-text-primary backdrop-blur-sm transition-colors hover:bg-bg-primary"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemoveFromSelection();
+          }}
+          data-tooltip="Remove from selection"
+        >
+          <X size={14} />
+        </button>
+      )}
+      <Thumbnail
+        data={imageData ?? thumbnails[imageFile.path]}
+        isActive={activePath === imageFile.path}
+        isSelected={multiSelectedPaths.includes(imageFile.path)}
+        onContextMenu={(e: React.MouseEvent) => onContextMenu(e, imageFile.path)}
+        onImageClick={onImageClick}
+        onImageDoubleClick={onImageDoubleClick}
+        onLoad={() => loadedThumbnails.add(imageFile.path)}
+        path={imageFile.path}
+        rating={imageRatings?.[imageFile.path] || 0}
+        tags={imageFile.tags ?? []}
+        aspectRatio={thumbnailAspectRatio}
+      />
+    </div>
+  );
+}
+
+function LoupeViewport({
+  imageData,
+  imageFile,
+  imageRatings,
+  isZoomActive,
+  onContextMenu,
+  onZoomActiveChange,
+  onZoomChange,
+  thumbnails,
+  zoom,
+}: {
+  imageData?: string;
+  imageFile: ImageFile;
+  imageRatings: Record<string, number>;
+  isZoomActive: boolean;
+  onContextMenu(event: React.MouseEvent, path: string): void;
+  onZoomActiveChange(active: boolean): void;
+  onZoomChange(zoom: number): void;
+  thumbnails: Record<string, string>;
+  zoom: number;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const dragOriginRef = useRef<{ x: number; y: number; panX: number; panY: number; hasDragged: boolean } | null>(null);
+  const suppressClickRef = useRef(false);
+  const [previewSourceSize, setPreviewSourceSize] = useState<{ width: number; height: number } | null>(null);
+  const [fullImageSize, setFullImageSize] = useState<{ width: number; height: number } | null>(null);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [isPointerTracking, setIsPointerTracking] = useState(false);
+
+  useEffect(() => {
+    let isCancelled = false;
+    invoke<{ width: number; height: number }>('get_image_dimensions', { path: imageFile.path })
+      .then((dimensions) => {
+        if (!isCancelled) {
+          setFullImageSize(dimensions);
+        }
+      })
+      .catch((error) => {
+        console.error(`Failed to load image dimensions for loupe view: ${imageFile.path}`, error);
+      });
+    return () => {
+      isCancelled = true;
+    };
+  }, [imageFile.path]);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+    const updateBounds = () => {
+      setViewportSize({ width: node.clientWidth, height: node.clientHeight });
+    };
+    updateBounds();
+    const observer = new ResizeObserver(updateBounds);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const fittedSize = useMemo(() => {
+    const inset = 12;
+    const maxWidth = Math.max(0, viewportSize.width - inset);
+    const maxHeight = Math.max(0, viewportSize.height - inset);
+    if (maxWidth === 0 || maxHeight === 0) {
+      return { width: 0, height: 0 };
+    }
+
+    const referenceSize =
+      fullImageSize && fullImageSize.width > 0 && fullImageSize.height > 0 ? fullImageSize : previewSourceSize;
+    const fullAspectRatio =
+      referenceSize && referenceSize.width > 0 && referenceSize.height > 0
+        ? referenceSize.width / referenceSize.height
+        : null;
+
+    if (!fullAspectRatio || !Number.isFinite(fullAspectRatio) || fullAspectRatio <= 0) {
+      return { width: maxWidth, height: maxHeight };
+    }
+    if (maxWidth / maxHeight > fullAspectRatio) {
+      const height = maxHeight;
+      return { width: height * fullAspectRatio, height };
+    }
+    const width = maxWidth;
+    return { width, height: width / fullAspectRatio };
+  }, [fullImageSize, previewSourceSize, viewportSize.height, viewportSize.width]);
+
+  const referenceImageSize = useMemo(() => {
+    if (fullImageSize && fullImageSize.width > 0 && fullImageSize.height > 0) return fullImageSize;
+    if (previewSourceSize && previewSourceSize.width > 0 && previewSourceSize.height > 0) return previewSourceSize;
+    return null;
+  }, [fullImageSize, previewSourceSize]);
+
+  const fitZoomPercent = useMemo(() => {
+    const referenceWidth = referenceImageSize?.width ?? fittedSize.width;
+    const referenceHeight = referenceImageSize?.height ?? fittedSize.height;
+    if (referenceWidth <= 0 || referenceHeight <= 0 || fittedSize.width <= 0 || fittedSize.height <= 0) return 1;
+    return Math.min(fittedSize.width / referenceWidth, fittedSize.height / referenceHeight);
+  }, [fittedSize.height, fittedSize.width, referenceImageSize]);
+
+  const fillShortEdgeZoomPercent = useMemo(() => {
+    const referenceWidth = referenceImageSize?.width ?? fittedSize.width;
+    const referenceHeight = referenceImageSize?.height ?? fittedSize.height;
+    if (referenceWidth <= 0 || referenceHeight <= 0 || fittedSize.width <= 0 || fittedSize.height <= 0) return 1;
+    return Math.max(fittedSize.width / referenceWidth, fittedSize.height / referenceHeight);
+  }, [fittedSize.height, fittedSize.width, referenceImageSize]);
+
+  const displayScale = useMemo(() => {
+    if (!isZoomActive) return 1;
+    return fitZoomPercent > 0 ? zoom / fitZoomPercent : 1;
+  }, [fitZoomPercent, isZoomActive, zoom]);
+
+  const scaledSize = useMemo(
+    () => ({ width: fittedSize.width * displayScale, height: fittedSize.height * displayScale }),
+    [displayScale, fittedSize.height, fittedSize.width],
+  );
+
+  const panBounds = useMemo(
+    () => ({
+      x: Math.max(0, (scaledSize.width - viewportSize.width) / 2),
+      y: Math.max(0, (scaledSize.height - viewportSize.height) / 2),
+    }),
+    [scaledSize.height, scaledSize.width, viewportSize.height, viewportSize.width],
+  );
+  const canPan = panBounds.x > 0.5 || panBounds.y > 0.5;
+
+  const clampPan = useCallback(
+    (nextPan: { x: number; y: number }) => ({
+      x: Math.max(-panBounds.x, Math.min(panBounds.x, nextPan.x)),
+      y: Math.max(-panBounds.y, Math.min(panBounds.y, nextPan.y)),
+    }),
+    [panBounds.x, panBounds.y],
+  );
+
+  useEffect(() => {
+    setPan((prev) => clampPan(prev));
+  }, [clampPan, zoom]);
+
+  useEffect(() => {
+    if (!isZoomActive) {
+      setPan({ x: 0, y: 0 });
+      setIsDragging(false);
+      setIsPointerTracking(false);
+      dragOriginRef.current = null;
+    }
+  }, [isZoomActive]);
+
+  useEffect(() => {
+    if (!isPointerTracking) return;
+
+    const dragThreshold = 6;
+    const handlePointerMove = (event: PointerEvent) => {
+      const origin = dragOriginRef.current;
+      if (!origin) return;
+
+      const deltaX = event.clientX - origin.x;
+      const deltaY = event.clientY - origin.y;
+      const hasExceededThreshold = Math.hypot(deltaX, deltaY) >= dragThreshold;
+
+      if (!origin.hasDragged && hasExceededThreshold && canPan) {
+        origin.hasDragged = true;
+        suppressClickRef.current = true;
+        setIsDragging(true);
+      }
+      if (!origin.hasDragged) return;
+
+      setPan(
+        clampPan({
+          x: origin.panX + deltaX,
+          y: origin.panY + deltaY,
+        }),
+      );
+    };
+
+    const handlePointerUp = () => {
+      const origin = dragOriginRef.current;
+      if (!origin?.hasDragged) {
+        setIsDragging(false);
+        setIsPointerTracking(false);
+        dragOriginRef.current = null;
+        return;
+      }
+      setIsDragging(false);
+      setIsPointerTracking(false);
+      dragOriginRef.current = null;
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [canPan, clampPan, isPointerTracking]);
+
+  const handleActivateZoom = useCallback(() => {
+    if (viewportSize.width === 0 || viewportSize.height === 0) return;
+    onZoomChange(Math.max(0.2, Math.min(2, fillShortEdgeZoomPercent * 2)));
+    onZoomActiveChange(true);
+    setPan({ x: 0, y: 0 });
+  }, [fillShortEdgeZoomPercent, onZoomActiveChange, onZoomChange, viewportSize.height, viewportSize.width]);
+
+  const handleDeactivateZoom = useCallback(() => {
+    onZoomActiveChange(false);
+    onZoomChange(1);
+    setPan({ x: 0, y: 0 });
+    setIsDragging(false);
+    setIsPointerTracking(false);
+    dragOriginRef.current = null;
+  }, [onZoomActiveChange, onZoomChange]);
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!isZoomActive) return;
+    dragOriginRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      panX: pan.x,
+      panY: pan.y,
+      hasDragged: false,
+    };
+    setIsPointerTracking(true);
+  };
+
+  const cursorClass = !isZoomActive ? 'cursor-zoom-in' : isDragging ? 'cursor-grabbing' : 'cursor-zoom-out';
+  const colorTag = imageFile.tags?.find((t) => t.startsWith('color:'))?.substring(6);
+  const colorLabel = COLOR_LABELS.find((c: Color) => c.name === colorTag);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`w-full h-full relative overflow-hidden ${cursorClass}`}
+      onContextMenu={(event) => onContextMenu(event, imageFile.path)}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (suppressClickRef.current) {
+          suppressClickRef.current = false;
+          return;
+        }
+        if (!isZoomActive) {
+          handleActivateZoom();
+        } else {
+          handleDeactivateZoom();
+        }
+      }}
+      onPointerDown={handlePointerDown}
+    >
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div
+          className="relative"
+          style={{
+            width: fittedSize.width,
+            height: fittedSize.height,
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${displayScale})`,
+            transformOrigin: 'center center',
+            willChange: isZoomActive ? 'transform' : undefined,
+          }}
+        >
+          <img
+            alt={imageFile.path.split(/[\\/]/).pop()}
+            className="w-full h-full rounded-md object-contain ring-2 ring-accent"
+            decoding="async"
+            draggable={false}
+            loading="lazy"
+            onLoad={(event) => {
+              const { naturalWidth, naturalHeight } = event.currentTarget;
+              if (naturalWidth > 0 && naturalHeight > 0) {
+                setPreviewSourceSize({ width: naturalWidth, height: naturalHeight });
+              }
+            }}
+            src={imageData ?? thumbnails[imageFile.path]}
+          />
+        </div>
+      </div>
+
+      {(colorLabel || (imageRatings?.[imageFile.path] || 0) > 0) && (
+        <div className="absolute top-1.5 right-1.5 bg-bg-primary/50 rounded-full px-1.5 py-0.5 flex items-center gap-1 backdrop-blur-sm">
+          {colorLabel && (
+            <div
+              className="w-3 h-3 rounded-full ring-1 ring-black/20"
+              style={{ backgroundColor: colorLabel.color }}
+              data-tooltip={`Color: ${colorLabel.name}`}
+            ></div>
+          )}
+          {(imageRatings?.[imageFile.path] || 0) > 0 && (
+            <>
+              <Text variant={TextVariants.label} color={TextColors.primary}>
+                {imageRatings?.[imageFile.path] || 0}
+              </Text>
+              <StarIcon size={16} className="text-accent fill-accent" />
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MainLibrary({
   activePath,
   aiModelDownloadStatus,
@@ -1650,7 +2137,10 @@ export default function MainLibrary({
   indexingProgress,
   isIndexing,
   isLoading,
+  isLibraryLoupeZoomActive,
   isTreeLoading: _isTreeLoading,
+  libraryLoupeZoom,
+  libraryPresentationMode,
   libraryScrollTop,
   libraryViewMode,
   multiSelectedPaths,
@@ -1663,7 +2153,10 @@ export default function MainLibrary({
   onImageDoubleClick,
   onReorderImages,
   onLibraryRefresh,
+  onLibraryLoupeZoomActiveChange,
+  onLibraryLoupeZoomChange,
   onOpenFolder,
+  onRemoveFromSelection,
   onSettingsChange,
   onThumbnailAspectRatioChange,
   onThumbnailSizeChange,
@@ -1714,6 +2207,7 @@ export default function MainLibrary({
   const [latestVersion, setLatestVersion] = useState('');
   const [isBusyDelayed, setIsBusyDelayed] = useState(false);
   const [isProgressHovered, setIsProgressHovered] = useState(false);
+  const [pendingCompareRemovalPaths, setPendingCompareRemovalPaths] = useState<Set<string>>(new Set());
   const loadedThumbnailsRef = useRef(new Set<string>());
   const handleHeaderSort = useCallback(
     (key: string) => {
@@ -1742,6 +2236,88 @@ export default function MainLibrary({
     if (libraryViewMode === LibraryViewMode.Flat || selectedCollectionName) return null;
     return groupImagesByFolder(imageList, currentFolderPath);
   }, [imageList, currentFolderPath, libraryViewMode, selectedCollectionName]);
+
+  const compareImages = useMemo(() => {
+    const selectedSet = new Set(multiSelectedPaths);
+    return imageList.filter((image) => selectedSet.has(image.path));
+  }, [imageList, multiSelectedPaths]);
+
+  useEffect(() => {
+    setPendingCompareRemovalPaths((prev) => {
+      if (prev.size === 0) {
+        return prev;
+      }
+      const selectedSet = new Set(multiSelectedPaths);
+      const next = new Set([...prev].filter((path) => selectedSet.has(path)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [multiSelectedPaths]);
+
+  const visibleCompareImages = useMemo(
+    () => compareImages.filter((image) => !pendingCompareRemovalPaths.has(image.path)),
+    [compareImages, pendingCompareRemovalPaths],
+  );
+
+  const loupeImage = useMemo(() => {
+    if (activePath) {
+      return imageList.find((image) => image.path === activePath) ?? null;
+    }
+
+    if (multiSelectedPaths.length > 0) {
+      const selectedSet = new Set(multiSelectedPaths);
+      return imageList.find((image) => selectedSet.has(image.path)) ?? null;
+    }
+
+    return null;
+  }, [activePath, imageList, multiSelectedPaths]);
+
+  useEffect(() => {
+    if (!loupeImage) {
+      onLibraryLoupeZoomActiveChange(false);
+      onLibraryLoupeZoomChange(1);
+      return;
+    }
+
+    onLibraryLoupeZoomActiveChange(false);
+    onLibraryLoupeZoomChange(1);
+  }, [loupeImage?.path, onLibraryLoupeZoomActiveChange, onLibraryLoupeZoomChange]);
+
+  const comparePreviewPaths = useMemo(() => visibleCompareImages.map((image) => image.path), [visibleCompareImages]);
+  const loupePreviewPaths = useMemo(() => (loupeImage ? [loupeImage.path] : []), [loupeImage]);
+
+  const comparePreviewUrls = useHighQualityPreviewUrls(
+    comparePreviewPaths,
+    libraryPresentationMode === LibraryPresentationMode.Compare && visibleCompareImages.length > 0,
+    `compare:${visibleCompareImages.length}`,
+  );
+  const loupePreviewUrls = useHighQualityPreviewUrls(
+    loupePreviewPaths,
+    libraryPresentationMode === LibraryPresentationMode.Loupe && !!loupeImage,
+    loupeImage?.path ?? 'loupe',
+  );
+
+  const handleCompareRemove = useCallback(
+    (path: string) => {
+      setPendingCompareRemovalPaths((prev) => new Set(prev).add(path));
+      onRemoveFromSelection?.(path);
+    },
+    [onRemoveFromSelection],
+  );
+
+  useEffect(() => {
+    if (!onRequestThumbnails) {
+      return;
+    }
+
+    if (libraryPresentationMode === LibraryPresentationMode.Compare && visibleCompareImages.length > 0) {
+      onRequestThumbnails(visibleCompareImages.map((image) => image.path));
+      return;
+    }
+
+    if (libraryPresentationMode === LibraryPresentationMode.Loupe && loupeImage) {
+      onRequestThumbnails([loupeImage.path]);
+    }
+  }, [libraryPresentationMode, loupeImage, onRequestThumbnails, visibleCompareImages]);
 
   const handleSortChange = useCallback(
     (criteria: SortCriteria | ((prev: SortCriteria) => SortCriteria)) => {
@@ -2297,7 +2873,8 @@ export default function MainLibrary({
           onClick={onClearSelection}
           onContextMenu={onEmptyAreaContextMenu}
         >
-          {gridSize.height > 0 &&
+          {libraryPresentationMode === LibraryPresentationMode.Grid &&
+            gridSize.height > 0 &&
             gridSize.width > 0 &&
             (() => {
               const isListView = thumbnailSize === ThumbnailSize.List;
@@ -2421,6 +2998,89 @@ export default function MainLibrary({
                 </div>
               );
             })()}
+          {libraryPresentationMode === LibraryPresentationMode.Compare && (
+            <div className="h-full p-4 overflow-hidden" data-dnd-scroll-region="grid">
+              {visibleCompareImages.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-center text-text-secondary">
+                  <div>
+                    <Text variant={TextVariants.heading} color={TextColors.secondary}>
+                      Select images to compare
+                    </Text>
+                    <Text className="mt-2">Choose one or more images in the library to open Compare view.</Text>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-full w-full overflow-hidden flex flex-col">
+                  <div className="flex items-center justify-between mb-4 flex-none">
+                    <Text variant={TextVariants.label} weight={TextWeights.semibold}>
+                      Compare
+                    </Text>
+                    <Text variant={TextVariants.small} className="text-text-secondary">
+                      {visibleCompareImages.length} image{visibleCompareImages.length === 1 ? '' : 's'}
+                    </Text>
+                  </div>
+                  <div className="flex-1 min-h-0 flex items-center gap-4 overflow-hidden">
+                    {visibleCompareImages.map((imageFile) => (
+                      <StaticThumbnailTile
+                        key={imageFile.path}
+                        className="min-w-0 flex-1 h-full overflow-hidden"
+                        imageData={comparePreviewUrls[imageFile.path]}
+                        imageFile={imageFile}
+                        activePath={activePath}
+                        multiSelectedPaths={multiSelectedPaths}
+                        onContextMenu={onContextMenu}
+                        onImageClick={onImageClick}
+                        onImageDoubleClick={onImageDoubleClick}
+                        onRemoveFromSelection={() => handleCompareRemove(imageFile.path)}
+                        thumbnails={thumbnails}
+                        thumbnailAspectRatio={ThumbnailAspectRatio.Contain}
+                        loadedThumbnails={loadedThumbnailsRef.current}
+                        imageRatings={imageRatings}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {libraryPresentationMode === LibraryPresentationMode.Loupe && (
+            <div className="h-full overflow-hidden p-4" data-dnd-scroll-region="grid">
+              {loupeImage ? (
+                <div className="h-full w-full overflow-hidden flex flex-col">
+                  <div className="flex items-center justify-between mb-4 flex-none">
+                    <Text variant={TextVariants.label} weight={TextWeights.semibold}>
+                      Loupe
+                    </Text>
+                    <Text variant={TextVariants.small} className="text-text-secondary truncate ml-4">
+                      {loupeImage.path.split(/[\\/]/).pop()}
+                    </Text>
+                  </div>
+                  <div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden">
+                    <LoupeViewport
+                      imageData={loupePreviewUrls[loupeImage.path]}
+                      imageFile={loupeImage}
+                      imageRatings={imageRatings}
+                      isZoomActive={isLibraryLoupeZoomActive}
+                      onContextMenu={onContextMenu}
+                      onZoomActiveChange={onLibraryLoupeZoomActiveChange}
+                      onZoomChange={onLibraryLoupeZoomChange}
+                      thumbnails={thumbnails}
+                      zoom={libraryLoupeZoom}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="h-full flex items-center justify-center text-center text-text-secondary">
+                  <div>
+                    <Text variant={TextVariants.heading} color={TextColors.secondary}>
+                      Select an image for loupe view
+                    </Text>
+                    <Text className="mt-2">Choose an image in the library to inspect it on its own.</Text>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : isIndexing || aiModelDownloadStatus || importState.status === Status.Importing ? (
         <div className="flex-1 flex flex-col items-center justify-center" onContextMenu={onEmptyAreaContextMenu}>

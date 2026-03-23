@@ -111,6 +111,7 @@ import {
   FilterCriteria,
   Invokes,
   ImageFile,
+  LibraryPresentationMode,
   Option,
   OPTION_SEPARATOR,
   LibraryViewMode,
@@ -422,6 +423,7 @@ function App() {
     goToIndex: goToAdjustmentsHistoryIndex,
   } = useHistoryState(INITIAL_ADJUSTMENTS);
   const [adjustments, setLiveAdjustments] = useState<Adjustments>(INITIAL_ADJUSTMENTS);
+  const [isBeforeAfterSplitView, setIsBeforeAfterSplitView] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [isTreeLoading, setIsTreeLoading] = useState(false);
   const [isViewLoading, setIsViewLoading] = useState(false);
@@ -478,6 +480,11 @@ function App() {
     effects: false,
   });
   const [isLibraryExportPanelVisible, setIsLibraryExportPanelVisible] = useState(false);
+  const [libraryPresentationMode, setLibraryPresentationMode] = useState<LibraryPresentationMode>(
+    LibraryPresentationMode.Grid,
+  );
+  const [libraryLoupeZoom, setLibraryLoupeZoom] = useState(1);
+  const [isLibraryLoupeZoomActive, setIsLibraryLoupeZoomActive] = useState(false);
   const [libraryViewMode, setLibraryViewMode] = useState<LibraryViewMode>(LibraryViewMode.Flat);
   const [leftPanelWidth, setLeftPanelWidth] = useState<number>(256);
   const [rightPanelWidth, setRightPanelWidth] = useState<number>(320);
@@ -1919,6 +1926,9 @@ function App() {
         if (settings?.libraryViewMode) {
           setLibraryViewMode(settings.libraryViewMode);
         }
+        if (settings?.libraryPresentationMode) {
+          setLibraryPresentationMode(settings.libraryPresentationMode);
+        }
         if (settings?.thumbnailSize) {
           setThumbnailSize(settings.thumbnailSize);
         }
@@ -2024,6 +2034,22 @@ function App() {
       handleSettingsChange({ ...appSettings, libraryViewMode });
     }
   }, [libraryViewMode, appSettings, handleSettingsChange]);
+
+  useEffect(() => {
+    if (isInitialMount.current || !appSettings) {
+      return;
+    }
+    if (appSettings.libraryPresentationMode !== libraryPresentationMode) {
+      handleSettingsChange({ ...appSettings, libraryPresentationMode });
+    }
+  }, [libraryPresentationMode, appSettings, handleSettingsChange]);
+
+  useEffect(() => {
+    if (libraryPresentationMode !== LibraryPresentationMode.Loupe) {
+      setIsLibraryLoupeZoomActive(false);
+      setLibraryLoupeZoom(1);
+    }
+  }, [libraryPresentationMode]);
 
   useEffect(() => {
     invoke(Invokes.GetSupportedFileTypes)
@@ -2747,6 +2773,7 @@ function App() {
       setMultiSelectedPaths([path]);
       setLibraryActivePath(null);
       setError(null);
+      setIsBeforeAfterSplitView(false);
       setShowOriginal(false);
       setActiveMaskId(null);
       setActiveMaskContainerId(null);
@@ -2845,8 +2872,21 @@ function App() {
         if (prev?.url) URL.revokeObjectURL(prev.url);
         return null;
       });
+  },
+  [selectedImage?.path, debouncedSave, thumbnails, resetAdjustmentsHistory],
+);
+
+  const handleRemoveFromSelection = useCallback(
+    (pathToRemove: string) => {
+      setMultiSelectedPaths((prev) => {
+        const next = prev.filter((path) => path !== pathToRemove);
+        if (libraryActivePath === pathToRemove) {
+          setLibraryActivePath(next[0] ?? null);
+        }
+        return next;
+      });
     },
-    [selectedImage?.path, debouncedSave, thumbnails, resetAdjustmentsHistory],
+    [libraryActivePath],
   );
 
   const executeDelete = useCallback(
@@ -3721,8 +3761,10 @@ function App() {
     [],
   );
 
+  const needsOriginalPreview = showOriginal || isBeforeAfterSplitView;
+
   useEffect(() => {
-    if (showOriginal && selectedImage?.isReady && displaySize.width > 0 && !isSliderDragging) {
+    if (needsOriginalPreview && selectedImage?.isReady && displaySize.width > 0 && !isSliderDragging) {
       let targetRes = calculateTargetRes();
 
       if (isFullScreen && originalSize.width > 0 && originalSize.height > 0) {
@@ -3737,7 +3779,7 @@ function App() {
       requestHiFiOriginalZoom.cancel();
     };
   }, [
-    showOriginal,
+    needsOriginalPreview,
     displaySize.width,
     displaySize.height,
     calculateTargetRes,
@@ -3753,7 +3795,7 @@ function App() {
     let isEffectActive = true;
 
     const generate = async () => {
-      if (showOriginal && selectedImage?.path && !transformedOriginalUrl) {
+      if (needsOriginalPreview && selectedImage?.path && !transformedOriginalUrl) {
         try {
           const targetRes = calculateTargetRes();
 
@@ -3769,6 +3811,7 @@ function App() {
           if (isEffectActive) {
             console.error('Failed to generate original preview:', e);
             setError('Failed to show original image.');
+            setIsBeforeAfterSplitView(false);
             setShowOriginal(false);
           }
         }
@@ -3780,7 +3823,7 @@ function App() {
     return () => {
       isEffectActive = false;
     };
-  }, [showOriginal, selectedImage?.path, adjustments, transformedOriginalUrl, calculateTargetRes]);
+  }, [needsOriginalPreview, selectedImage?.path, adjustments, transformedOriginalUrl, calculateTargetRes]);
 
   const isAnyModalOpen =
     isCreateFolderModalOpen ||
@@ -5783,7 +5826,10 @@ function App() {
             indexingProgress={indexingProgress}
             isIndexing={isIndexing}
             isLoading={isViewLoading}
+            isLibraryLoupeZoomActive={isLibraryLoupeZoomActive}
             isTreeLoading={isTreeLoading}
+            libraryLoupeZoom={libraryLoupeZoom}
+            libraryPresentationMode={libraryPresentationMode}
             libraryScrollTop={libraryScrollTop}
             libraryViewMode={libraryViewMode}
             multiSelectedPaths={multiSelectedPaths}
@@ -5796,7 +5842,10 @@ function App() {
             onImageDoubleClick={handleImageSelect}
             onReorderImages={handleReorderImages}
             onLibraryRefresh={handleLibraryRefresh}
+            onLibraryLoupeZoomActiveChange={setIsLibraryLoupeZoomActive}
+            onLibraryLoupeZoomChange={setLibraryLoupeZoom}
             onOpenFolder={handleOpenFolder}
+            onRemoveFromSelection={handleRemoveFromSelection}
             onSettingsChange={handleSettingsChange}
             onThumbnailAspectRatioChange={setThumbnailAspectRatio}
             onThumbnailSizeChange={setThumbnailSize}
@@ -5826,13 +5875,18 @@ function App() {
             isCopyDisabled={multiSelectedPaths.length !== 1}
             isExportDisabled={multiSelectedPaths.length === 0}
             isLibraryView={true}
+            isLibraryLoupeZoomActive={isLibraryLoupeZoomActive}
             isPasted={isPasted}
             isPasteDisabled={copiedAdjustments === null || multiSelectedPaths.length === 0}
             isRatingDisabled={multiSelectedPaths.length === 0}
             isResetDisabled={multiSelectedPaths.length === 0}
+            libraryLoupeZoom={libraryLoupeZoom}
+            libraryPresentationMode={libraryPresentationMode}
             multiSelectedPaths={multiSelectedPaths}
             onCopy={handleCopyAdjustments}
             onExportClick={() => setIsLibraryExportPanelVisible((prev) => !prev)}
+            onLibraryLoupeZoomChange={setLibraryLoupeZoom}
+            onLibraryPresentationModeChange={setLibraryPresentationMode}
             onOpenCopyPasteSettings={() => setIsCopyPasteSettingsModalOpen(true)}
             onPaste={() => handlePasteAdjustments()}
             onRate={handleRate}
@@ -5879,6 +5933,7 @@ function App() {
               canRedo={canRedo}
               canUndo={canUndo}
               finalPreviewUrl={finalPreviewUrl}
+              isBeforeAfterSplitView={isBeforeAfterSplitView}
               interactivePatch={interactivePatch}
               isFullScreen={isFullScreen}
               isLoading={isViewLoading}
@@ -5901,6 +5956,7 @@ function App() {
               isWbPickerActive={isWbPickerActive}
               onWbPicked={handleWbPicked}
               setAdjustments={setAdjustments}
+              setBeforeAfterSplitView={setIsBeforeAfterSplitView}
               setShowOriginal={setShowOriginal}
               showOriginal={showOriginal}
               targetZoom={zoom}

@@ -169,6 +169,7 @@ export interface AppSettings {
   lastFolderState?: any;
   pinnedFolders?: any;
   lastRootPath: string | null;
+  libraryPresentationMode?: LibraryPresentationMode;
   libraryViewMode?: LibraryViewMode;
   sortCriteria?: SortCriteria;
   theme: Theme;
@@ -202,6 +203,12 @@ export interface BrushSettings {
 export enum LibraryViewMode {
   Flat = 'flat',
   Recursive = 'recursive',
+}
+
+export enum LibraryPresentationMode {
+  Grid = 'grid',
+  Compare = 'compare',
+  Loupe = 'loupe',
 }
 
 export interface FilterCriteria {
