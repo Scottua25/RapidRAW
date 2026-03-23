@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Star, Copy, ClipboardPaste, RotateCcw, ChevronUp, ChevronDown, Check, Save, Settings } from 'lucide-react';
+import { Star, Copy, ClipboardPaste, RotateCcw, ChevronUp, ChevronDown, Check, Save, Settings, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import Filmstrip from './Filmstrip';
 import {
+  BottomBarActivity,
   GLOBAL_KEYS,
   ImageFile,
   LibraryPresentationMode,
@@ -12,6 +13,7 @@ import {
 } from '../ui/AppProperties';
 
 interface BottomBarProps {
+  backgroundActivity?: BottomBarActivity | null;
   filmstripHeight?: number;
   imageList?: Array<ImageFile>;
   imageRatings?: Record<string, number> | null;
@@ -58,6 +60,18 @@ interface StarRatingProps {
   disabled: boolean;
   onRate(rate: number): void;
   rating: number;
+}
+
+function getActivityKey(activity: BottomBarActivity | null | undefined) {
+  if (!activity) {
+    return '';
+  }
+
+  return [
+    activity.isBusy ? 'busy' : 'done',
+    activity.label,
+    activity.detail ?? '',
+  ].join('|');
 }
 
 function LibraryPresentationModeToggle({
@@ -127,6 +141,7 @@ const StarRating = ({ rating, onRate, disabled }: StarRatingProps) => {
 };
 
 export default function BottomBar({
+  backgroundActivity = null,
   filmstripHeight,
   imageList = [],
   imageRatings,
@@ -168,6 +183,7 @@ export default function BottomBar({
 }: BottomBarProps) {
   const [isEditingPercent, setIsEditingPercent] = useState(false);
   const [percentInputValue, setPercentInputValue] = useState('');
+  const [visibleBackgroundActivity, setVisibleBackgroundActivity] = useState<BottomBarActivity | null>(null);
   const isDraggingSlider = useRef(false);
   const [isZoomActive, setIsZoomActive] = useState(false);
 
@@ -181,6 +197,7 @@ export default function BottomBar({
 
   const [latchedSliderValue, setLatchedSliderValue] = useState(1.0);
   const [latchedDisplayPercent, setLatchedDisplayPercent] = useState(100);
+  const visibleBackgroundActivityKey = getActivityKey(visibleBackgroundActivity);
 
   const numSelected = multiSelectedPaths.length;
   const total = totalImages ?? 0;
@@ -215,6 +232,40 @@ export default function BottomBar({
       window.removeEventListener('touchend', handleDragEndGlobal);
     };
   }, [isZoomActive, isZoomReady, currentOriginalPercent]);
+
+  useEffect(() => {
+    let timer: number | undefined;
+    const nextActivityKey = getActivityKey(backgroundActivity);
+
+    if (backgroundActivity) {
+      if (backgroundActivity.isBusy) {
+        if (visibleBackgroundActivity?.isBusy) {
+          setVisibleBackgroundActivity(backgroundActivity);
+        } else {
+          timer = window.setTimeout(() => {
+            setVisibleBackgroundActivity(backgroundActivity);
+          }, 350);
+        }
+      } else {
+        if (visibleBackgroundActivityKey !== nextActivityKey) {
+          setVisibleBackgroundActivity(backgroundActivity);
+        }
+        timer = window.setTimeout(() => {
+          setVisibleBackgroundActivity((current) => {
+            return getActivityKey(current) === nextActivityKey ? null : current;
+          });
+        }, 900);
+      }
+    } else {
+      if (visibleBackgroundActivity !== null) {
+        setVisibleBackgroundActivity(null);
+      }
+    }
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [backgroundActivity, visibleBackgroundActivity, visibleBackgroundActivityKey]);
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newZoom = parseFloat(e.target.value);
@@ -307,7 +358,7 @@ export default function BottomBar({
 
       <div
         className={clsx(
-          'flex-shrink-0 h-10 flex items-center justify-between px-3',
+          'relative flex-shrink-0 h-10 flex items-center justify-between px-3',
           !isLibraryView && 'border-t',
           !isLibraryView && isFilmstripVisible ? 'border-surface' : 'border-transparent',
         )}
@@ -408,6 +459,31 @@ export default function BottomBar({
             </span>
           </div>
         </div>
+        <AnimatePresence initial={false}>
+          {visibleBackgroundActivity && (
+            <motion.div
+              key={visibleBackgroundActivityKey}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.18 }}
+              className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex max-w-[40%] items-center gap-2 rounded-full bg-surface/80 px-3 py-1 backdrop-blur-sm"
+            >
+              {visibleBackgroundActivity.isBusy ? (
+                <Loader2 size={14} className="animate-spin text-text-secondary flex-shrink-0" />
+              ) : (
+                <Check size={14} className="text-green-500 flex-shrink-0" />
+              )}
+              <span className="truncate text-xs text-text-secondary">
+                {visibleBackgroundActivity.label}
+                {visibleBackgroundActivity.progress && visibleBackgroundActivity.progress.total > 0
+                  ? ` (${visibleBackgroundActivity.progress.current}/${visibleBackgroundActivity.progress.total})`
+                  : ''}
+                {visibleBackgroundActivity.detail ? ` ${visibleBackgroundActivity.detail}` : ''}
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <div className="flex-grow" />
         {isLibraryView ? (
           <div className="flex items-center gap-2">

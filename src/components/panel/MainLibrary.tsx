@@ -28,6 +28,7 @@ import SettingsPanel from './SettingsPanel';
 import { ThemeProps, THEMES, DEFAULT_THEME_ID } from '../../utils/themes';
 import {
   AppSettings,
+  BottomBarActivity,
   FilterCriteria,
   ImageFile,
   Invokes,
@@ -101,6 +102,7 @@ interface MainLibraryProps {
   onLibraryRefresh(): void;
   onLibraryLoupeZoomActiveChange(active: boolean): void;
   onLibraryLoupeZoomChange(zoom: number): void;
+  onBackgroundActivityChange?(activity: BottomBarActivity | null): void;
   onOpenFolder(): void;
   onRemoveFromSelection?(path: string): void;
   onSettingsChange(settings: AppSettings): Promise<void>;
@@ -148,10 +150,12 @@ type LibraryRow =
 
 function useHighQualityPreviewUrls(paths: string[], enabled: boolean, generationKey = 'default') {
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [settledVersion, setSettledVersion] = useState(0);
   const previewUrlsRef = useRef<Record<string, string>>({});
   const inFlightPathsRef = useRef<Set<string>>(new Set());
   const activePathsRef = useRef<Set<string>>(new Set());
   const loadedGenerationKeysRef = useRef<Record<string, string>>({});
+  const settledGenerationKeysRef = useRef<Record<string, string>>({});
   const activeGenerationKeyRef = useRef(generationKey);
 
   useEffect(() => {
@@ -165,6 +169,8 @@ function useHighQualityPreviewUrls(paths: string[], enabled: boolean, generation
     if (!enabled || paths.length === 0) {
       inFlightPathsRef.current.clear();
       loadedGenerationKeysRef.current = {};
+      settledGenerationKeysRef.current = {};
+      setSettledVersion(0);
       setPreviewUrls((prev) => {
         if (Object.keys(prev).length === 0) {
           return prev;
@@ -184,6 +190,7 @@ function useHighQualityPreviewUrls(paths: string[], enabled: boolean, generation
           next[path] = url;
         } else {
           delete loadedGenerationKeysRef.current[path];
+          delete settledGenerationKeysRef.current[path];
           URL.revokeObjectURL(url);
         }
       });
@@ -200,7 +207,7 @@ function useHighQualityPreviewUrls(paths: string[], enabled: boolean, generation
 
     const nextPath = paths.find(
       (path) =>
-        (!previewUrls[path] || loadedGenerationKeysRef.current[path] !== generationKey) &&
+        settledGenerationKeysRef.current[path] !== generationKey &&
         !inFlightPathsRef.current.has(path),
     );
 
@@ -234,6 +241,8 @@ function useHighQualityPreviewUrls(paths: string[], enabled: boolean, generation
               URL.revokeObjectURL(previousUrl);
             }
             loadedGenerationKeysRef.current[nextPath] = requestedGenerationKey;
+            settledGenerationKeysRef.current[nextPath] = requestedGenerationKey;
+            setSettledVersion((prevVersion) => prevVersion + 1);
 
             return {
               ...prev,
@@ -242,6 +251,13 @@ function useHighQualityPreviewUrls(paths: string[], enabled: boolean, generation
           });
         })
         .catch((error) => {
+          if (
+            activePathsRef.current.has(nextPath) &&
+            activeGenerationKeyRef.current === requestedGenerationKey
+          ) {
+            settledGenerationKeysRef.current[nextPath] = requestedGenerationKey;
+            setSettledVersion((prevVersion) => prevVersion + 1);
+          }
           console.error(`Failed to generate high-quality preview for ${nextPath}`, error);
         })
         .finally(() => {
@@ -261,7 +277,26 @@ function useHighQualityPreviewUrls(paths: string[], enabled: boolean, generation
     };
   }, []);
 
-  return previewUrls;
+  const completed = useMemo(() => {
+    if (!enabled || paths.length === 0) {
+      return 0;
+    }
+
+    return paths.reduce((count, path) => {
+      return count + (settledGenerationKeysRef.current[path] === generationKey ? 1 : 0);
+    }, 0);
+  }, [enabled, generationKey, paths, previewUrls, settledVersion]);
+
+  const total = enabled ? paths.length : 0;
+
+  return {
+    previewUrls,
+    progress: {
+      completed,
+      isWorking: enabled && total > 0 && completed < total,
+      total,
+    },
+  };
 }
 
 interface ThumbnailProps {
@@ -2037,6 +2072,7 @@ export default function MainLibrary({
   onLibraryRefresh,
   onLibraryLoupeZoomActiveChange,
   onLibraryLoupeZoomChange,
+  onBackgroundActivityChange,
   onOpenFolder,
   onRemoveFromSelection,
   onSettingsChange,
@@ -2127,16 +2163,62 @@ export default function MainLibrary({
   const comparePreviewPaths = useMemo(() => visibleCompareImages.map((image) => image.path), [visibleCompareImages]);
   const loupePreviewPaths = useMemo(() => (loupeImage ? [loupeImage.path] : []), [loupeImage]);
 
-  const comparePreviewUrls = useHighQualityPreviewUrls(
+  const comparePreviewState = useHighQualityPreviewUrls(
     comparePreviewPaths,
     libraryPresentationMode === LibraryPresentationMode.Compare && visibleCompareImages.length > 0,
     `compare:${visibleCompareImages.length}`,
   );
-  const loupePreviewUrls = useHighQualityPreviewUrls(
+  const loupePreviewState = useHighQualityPreviewUrls(
     loupePreviewPaths,
     libraryPresentationMode === LibraryPresentationMode.Loupe && !!loupeImage,
     loupeImage?.path ?? 'loupe',
   );
+  const comparePreviewUrls = comparePreviewState.previewUrls;
+  const loupePreviewUrls = loupePreviewState.previewUrls;
+
+  const libraryBackgroundActivity = useMemo<BottomBarActivity | null>(() => {
+    if (libraryPresentationMode === LibraryPresentationMode.Loupe && loupePreviewState.progress.isWorking) {
+      return {
+        isBusy: true,
+        label: 'Rendering full preview',
+      };
+    }
+
+    if (libraryPresentationMode === LibraryPresentationMode.Compare && comparePreviewState.progress.isWorking) {
+      return {
+        isBusy: true,
+        label: 'Loading previews',
+        progress: {
+          current: comparePreviewState.progress.completed,
+          total: comparePreviewState.progress.total,
+        },
+      };
+    }
+
+    if (isLoading) {
+      return {
+        isBusy: true,
+        label: 'Loading library',
+      };
+    }
+
+    return null;
+  }, [
+    comparePreviewState.progress.completed,
+    comparePreviewState.progress.isWorking,
+    comparePreviewState.progress.total,
+    isLoading,
+    libraryPresentationMode,
+    loupePreviewState.progress.isWorking,
+  ]);
+
+  useEffect(() => {
+    onBackgroundActivityChange?.(libraryBackgroundActivity);
+
+    return () => {
+      onBackgroundActivityChange?.(null);
+    };
+  }, [libraryBackgroundActivity, onBackgroundActivityChange]);
 
   const handleCompareRemove = useCallback(
     (path: string) => {

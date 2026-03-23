@@ -270,6 +270,16 @@ export interface Progress {
   total: number;
 }
 
+export interface BottomBarActivity {
+  detail?: string;
+  isBusy: boolean;
+  label: string;
+  progress?: {
+    current: number;
+    total: number;
+  };
+}
+
 export interface SelectedImage {
   exif: any;
   height: number;
