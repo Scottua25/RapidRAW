@@ -108,6 +108,7 @@ import { SubMask, ToolType } from './components/panel/right/Masks';
 import { ExportState, IMPORT_TIMEOUT, ImportState, Status } from './components/ui/ExportImportProperties';
 import {
   AppSettings,
+  BottomBarActivity,
   BrushSettings,
   FilterCriteria,
   Invokes,
@@ -612,7 +613,10 @@ function App() {
   const fallbackCustomOrderByContextRef = useRef<Record<string, Array<string>>>({});
   const { showContextMenu } = useContextMenu();
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
-  const { loading: isThumbnailsLoading } = useThumbnails(imageList, setThumbnails);
+  const [libraryBackgroundActivity, setLibraryBackgroundActivity] = useState<BottomBarActivity | null>(null);
+  const { loading: isThumbnailsLoading, progress: thumbnailProgress } = useThumbnails(imageList, thumbnails, setThumbnails);
+  const [showThumbnailCompletion, setShowThumbnailCompletion] = useState(false);
+  const wasThumbnailBatchActiveRef = useRef(false);
   const transformWrapperRef = useRef<any>(null);
   const isProgrammaticZoom = useRef(false);
   const currentResRef = useRef<number>(1280);
@@ -647,6 +651,27 @@ function App() {
       };
     }
   }, [rootPath, folderTree]);
+
+  useEffect(() => {
+    const thumbnailTotal = thumbnailProgress.total || 0;
+    const isThumbnailBatchActive = isThumbnailsLoading && thumbnailTotal > 0;
+    let timer: number | undefined;
+
+    if (isThumbnailBatchActive) {
+      setShowThumbnailCompletion(false);
+    } else if (wasThumbnailBatchActiveRef.current && thumbnailTotal > 0) {
+      setShowThumbnailCompletion(true);
+      timer = window.setTimeout(() => {
+        setShowThumbnailCompletion(false);
+      }, 900);
+    }
+
+    wasThumbnailBatchActiveRef.current = isThumbnailBatchActive;
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isThumbnailsLoading, thumbnailProgress.completed, thumbnailProgress.current, thumbnailProgress.total]);
 
   const [exportState, setExportState] = useState<ExportState>({
     errorMessage: '',
@@ -5910,6 +5935,72 @@ function App() {
     ],
   );
 
+  const resolvedLibraryBottomBarActivity = useMemo<BottomBarActivity | null>(() => {
+    const thumbnailCurrent = thumbnailProgress.completed ?? thumbnailProgress.current ?? 0;
+    const thumbnailTotal = thumbnailProgress.total || 0;
+
+    if (isIndexing) {
+      return {
+        isBusy: true,
+        label: 'Indexing images',
+        progress: {
+          current: indexingProgress.current ?? 0,
+          total: indexingProgress.total || 0,
+        },
+      };
+    }
+
+    if (importState.status === Status.Importing) {
+      return {
+        isBusy: true,
+        label: 'Importing images',
+        progress: {
+          current: importState.progress?.current ?? 0,
+          total: importState.progress?.total ?? 0,
+        },
+      };
+    }
+
+    if (libraryBackgroundActivity?.isBusy) {
+      return libraryBackgroundActivity;
+    }
+
+    if (isThumbnailsLoading && thumbnailTotal > 0) {
+      return {
+        isBusy: true,
+        label: 'Generating thumbnails',
+        progress: {
+          current: thumbnailCurrent,
+          total: thumbnailTotal,
+        },
+      };
+    }
+
+    if (showThumbnailCompletion && thumbnailTotal > 0) {
+      return {
+        isBusy: false,
+        label: thumbnailCurrent >= thumbnailTotal ? 'Thumbnails complete' : 'Thumbnail batch finished',
+        progress: {
+          current: thumbnailCurrent,
+          total: thumbnailTotal,
+        },
+      };
+    }
+
+    return null;
+  }, [importState.progress?.current, importState.progress?.total, importState.status, indexingProgress.current, indexingProgress.total, isIndexing, isThumbnailsLoading, libraryBackgroundActivity, showThumbnailCompletion, thumbnailProgress.completed, thumbnailProgress.current, thumbnailProgress.total]);
+
+  const editorBottomBarActivity = useMemo<BottomBarActivity | null>(() => {
+    if (isViewLoading) {
+      return {
+        isBusy: true,
+        label: 'Rendering preview',
+      };
+    }
+
+    return null;
+  }, [isViewLoading]);
+
   const memoizedLibraryView = useMemo(
     () => (
       <div className="flex flex-row flex-grow h-full min-h-0">
@@ -5953,6 +6044,7 @@ function App() {
               onLibraryRefresh={handleLibraryRefresh}
               onLibraryLoupeZoomActiveChange={setIsLibraryLoupeZoomActive}
               onLibraryLoupeZoomChange={setLibraryLoupeZoom}
+              onBackgroundActivityChange={setLibraryBackgroundActivity}
               onOpenFolder={handleOpenFolder}
               onRemoveFromSelection={handleRemoveFromSelection}
               onSettingsChange={handleSettingsChange}
@@ -5996,6 +6088,7 @@ function App() {
               onPaste={() => handlePasteAdjustments()}
               onRate={handleRate}
               onReset={() => handleResetAdjustments()}
+              backgroundActivity={resolvedLibraryBottomBarActivity}
               rating={libraryActiveAdjustments.rating || 0}
               thumbnailAspectRatio={thumbnailAspectRatio}
               totalImages={imageList.length}
@@ -6037,6 +6130,7 @@ function App() {
       isPasted,
       copiedAdjustments,
       libraryActiveAdjustments,
+      resolvedLibraryBottomBarActivity,
       supportedTypes,
       copiedFilePaths,
     ],
@@ -6155,6 +6249,7 @@ function App() {
                 onPaste={() => handlePasteAdjustments()}
                 onRate={handleRate}
                 onZoomChange={handleZoomChange}
+                backgroundActivity={editorBottomBarActivity}
                 rating={adjustments.rating || 0}
                 selectedImage={selectedImage}
                 setIsFilmstripVisible={(value: boolean) =>
