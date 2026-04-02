@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { ImageFile, Panel, SelectedImage } from '../components/ui/AppProperties';
+import { ImageFile, LibraryPresentationMode, Panel, SelectedImage } from '../components/ui/AppProperties';
 import { BrushSettings } from '../components/ui/AppProperties';
 
 interface KeyboardShortcutsProps {
@@ -32,6 +32,7 @@ interface KeyboardShortcutsProps {
   isStraightenActive: boolean;
   isViewLoading: boolean;
   libraryActivePath: string | null;
+  libraryPresentationMode: LibraryPresentationMode;
   multiSelectedPaths: Array<string>;
   onSelectPatchContainer?(container: string | null): void;
   redo(): void;
@@ -43,6 +44,7 @@ interface KeyboardShortcutsProps {
   setIsStraightenActive(active: any): void;
   setIsWaveformVisible(visible: any): void;
   setLibraryActivePath(path: string): void;
+  setLibraryPresentationMode(mode: LibraryPresentationMode): void;
   setMultiSelectedPaths(paths: Array<string>): void;
   setShowOriginal(show: any): void;
   sortedImageList: Array<ImageFile>;
@@ -85,6 +87,7 @@ export const useKeyboardShortcuts = ({
   isStraightenActive,
   isViewLoading,
   libraryActivePath,
+  libraryPresentationMode,
   multiSelectedPaths,
   onSelectPatchContainer,
   redo,
@@ -96,6 +99,7 @@ export const useKeyboardShortcuts = ({
   setIsStraightenActive,
   setIsWaveformVisible,
   setLibraryActivePath,
+  setLibraryPresentationMode,
   setMultiSelectedPaths,
   setShowOriginal,
   sortedImageList,
@@ -242,6 +246,21 @@ export const useKeyboardShortcuts = ({
           }
         }
       } else {
+        if (key === 'g' && !isCtrl) {
+          event.preventDefault();
+          setLibraryPresentationMode(LibraryPresentationMode.Grid);
+          return;
+        }
+        if (key === 'c' && !isCtrl) {
+          event.preventDefault();
+          setLibraryPresentationMode(LibraryPresentationMode.Compare);
+          return;
+        }
+        if (key === 'l' && !isCtrl) {
+          event.preventDefault();
+          setLibraryPresentationMode(LibraryPresentationMode.Loupe);
+          return;
+        }
         if ((key === 'enter' || key === ' ') && !isCtrl) {
           event.preventDefault();
           if (libraryActivePath) {
@@ -483,6 +502,7 @@ export const useKeyboardShortcuts = ({
     isStraightenActive,
     isViewLoading,
     libraryActivePath,
+    libraryPresentationMode,
     multiSelectedPaths,
     onSelectPatchContainer,
     redo,
@@ -494,6 +514,7 @@ export const useKeyboardShortcuts = ({
     setIsStraightenActive,
     setIsWaveformVisible,
     setLibraryActivePath,
+    setLibraryPresentationMode,
     setMultiSelectedPaths,
     setShowOriginal,
     sortedImageList,

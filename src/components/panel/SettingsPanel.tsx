@@ -1804,6 +1804,9 @@ export default function SettingsPanel({
                           keys={osPlatform === 'macos' ? ['Cmd', '+', 'Delete'] : ['Delete']}
                           description="Delete selected file(s)"
                         />
+                        <KeybindItem keys={['G']} description="Switch library to Grid view" />
+                        <KeybindItem keys={['C']} description="Switch library to Compare view" />
+                        <KeybindItem keys={['L']} description="Switch library to Loupe view" />
                         <KeybindItem keys={['0-5']} description="Set star rating for selected image(s)" />
                         <KeybindItem keys={['Shift', '+', '0-5']} description="Set color label for selected image(s)" />
                         <KeybindItem keys={['↑', '↓', '←', '→']} description="Navigate images in library" />

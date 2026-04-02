@@ -489,6 +489,7 @@ function App() {
   const [leftPanelWidth, setLeftPanelWidth] = useState<number>(256);
   const [rightPanelWidth, setRightPanelWidth] = useState<number>(320);
   const [bottomPanelHeight, setBottomPanelHeight] = useState<number>(144);
+  const [isEditorLeftPanelExpanded, setIsEditorLeftPanelExpanded] = useState(false);
   const [activeTreeSection, setActiveTreeSection] = useState<string | null>('current');
   const [folderTreeCollectionsSplitRatio, setFolderTreeCollectionsSplitRatio] = useState<number>(0.72);
   const [isResizing, setIsResizing] = useState(false);
@@ -3868,6 +3869,7 @@ function App() {
     isStraightenActive,
     isViewLoading,
     libraryActivePath,
+    libraryPresentationMode,
     multiSelectedPaths,
     redo,
     selectedImage,
@@ -3878,6 +3880,7 @@ function App() {
     setIsStraightenActive,
     setIsWaveformVisible,
     setLibraryActivePath,
+    setLibraryPresentationMode,
     setMultiSelectedPaths,
     setShowOriginal,
     sortedImageList,
@@ -5737,6 +5740,12 @@ function App() {
     ];
     showContextMenu(event.clientX, event.clientY, options);
   };
+
+  useEffect(() => {
+    if (selectedImage) {
+      setIsEditorLeftPanelExpanded(false);
+    }
+  }, [selectedImage?.path]);
 
   const isFolderTreeVisible = uiVisibility.folderTree && (!selectedImage || isEditorLeftPanelExpanded);
 

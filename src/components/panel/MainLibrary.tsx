@@ -1359,13 +1359,17 @@ function Thumbnail({
   onImageDoubleClick,
   onLoad,
   path,
+  presentation = 'default',
   rating,
   tags,
   aspectRatio: thumbnailAspectRatio,
 }: ThumbnailProps) {
   const [showPlaceholder, setShowPlaceholder] = useState(false);
   const [layers, setLayers] = useState<ImageLayer[]>([]);
+  const [naturalAspectRatio, setNaturalAspectRatio] = useState<number | null>(null);
+  const [framelessBounds, setFramelessBounds] = useState({ width: 0, height: 0 });
   const latestThumbDataRef = useRef<string | undefined>(undefined);
+  const framelessContainerRef = useRef<HTMLDivElement | null>(null);
 
   const { baseName, isVirtualCopy } = useMemo(() => {
     const fullFileName = path.split(/[\\/]/).pop() || '';
@@ -1433,8 +1437,161 @@ function Thumbnail({
     : isSelected
       ? 'ring-2 ring-gray-400'
       : 'hover:ring-2 hover:ring-hover-color';
+  const mediaRingClass = isActive
+    ? 'ring-2 ring-accent'
+    : isSelected
+      ? 'ring-2 ring-gray-400'
+      : 'group-hover:ring-2 group-hover:ring-hover-color';
   const colorTag = tags?.find((t: string) => t.startsWith('color:'))?.substring(6);
   const colorLabel = COLOR_LABELS.find((c: Color) => c.name === colorTag);
+  const isFrameless = presentation === 'frameless';
+  const framelessMediaSize = useMemo(() => {
+    const inset = 12;
+    const maxWidth = Math.max(0, framelessBounds.width - inset);
+    const maxHeight = Math.max(0, framelessBounds.height - inset);
+
+    if (maxWidth === 0 || maxHeight === 0) {
+      return { width: 0, height: 0 };
+    }
+
+    if (!naturalAspectRatio || !Number.isFinite(naturalAspectRatio) || naturalAspectRatio <= 0) {
+      return { width: maxWidth, height: maxHeight };
+    }
+
+    if (maxWidth / maxHeight > naturalAspectRatio) {
+      const height = maxHeight;
+      return {
+        width: height * naturalAspectRatio,
+        height,
+      };
+    }
+
+    const width = maxWidth;
+    return {
+      width,
+      height: width / naturalAspectRatio,
+    };
+  }, [framelessBounds.height, framelessBounds.width, naturalAspectRatio]);
+
+  useEffect(() => {
+    if (!isFrameless) {
+      return;
+    }
+
+    const node = framelessContainerRef.current;
+    if (!node) {
+      return;
+    }
+
+    const updateBounds = () => {
+      setFramelessBounds({
+        width: node.clientWidth,
+        height: node.clientHeight,
+      });
+    };
+
+    updateBounds();
+
+    const observer = new ResizeObserver(() => {
+      updateBounds();
+    });
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [isFrameless]);
+
+  if (isFrameless) {
+    return (
+      <div
+        ref={framelessContainerRef}
+        className="w-full h-full cursor-pointer group relative flex items-center justify-center overflow-hidden transition-all duration-150"
+        onClick={(e: React.MouseEvent) => {
+          e.stopPropagation();
+          onImageClick(path, e);
+        }}
+        onContextMenu={onContextMenu}
+        onDoubleClick={() => onImageDoubleClick(path)}
+      >
+        {!isDragGhost && layers.length > 0 && (
+          <div className="relative w-full h-full flex items-center justify-center">
+            {layers.map((layer) => (
+              <div
+                key={layer.id}
+                className="absolute inset-0 flex items-center justify-center"
+                style={{
+                  opacity: layer.opacity,
+                  transition: 'opacity 300ms ease-in-out',
+                }}
+                onTransitionEnd={() => handleTransitionEnd(layer.id)}
+              >
+                <div
+                  className={`relative flex items-center justify-center transition-all duration-150 ${mediaRingClass}`}
+                  style={{
+                    width: framelessMediaSize.width,
+                    height: framelessMediaSize.height,
+                  }}
+                >
+                  <img
+                    alt={path.split(/[\\/]/).pop()}
+                    className="w-full h-full rounded-md object-contain"
+                    decoding="async"
+                    draggable={false}
+                    loading="lazy"
+                    onLoad={(event) => {
+                      const { naturalWidth, naturalHeight } = event.currentTarget;
+                      if (naturalWidth > 0 && naturalHeight > 0) {
+                        setNaturalAspectRatio(naturalWidth / naturalHeight);
+                      }
+                    }}
+                    src={layer.url}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <AnimatePresence>
+          {!isDragGhost && layers.length === 0 && showPlaceholder && (
+            <motion.div
+              className="absolute inset-0 flex items-center justify-center bg-transparent"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+            >
+              <ImageIcon className="text-text-secondary animate-pulse" />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {isDragGhost && <div className="absolute inset-0 bg-transparent" />}
+
+        {!isDragGhost && (colorLabel || rating > 0) && (
+          <div className="absolute top-1.5 right-1.5 bg-bg-primary/50 rounded-full px-1.5 py-0.5 flex items-center gap-1 backdrop-blur-sm">
+            {colorLabel && (
+              <div
+                className="w-3 h-3 rounded-full ring-1 ring-black/20"
+                style={{ backgroundColor: colorLabel.color }}
+                data-tooltip={`Color: ${colorLabel.name}`}
+              ></div>
+            )}
+            {rating > 0 && (
+              <>
+                <Text variant={TextVariants.label} color={TextColors.primary}>
+                  {rating}
+                </Text>
+                <StarIcon size={16} className="text-accent fill-accent" />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1707,7 +1864,6 @@ const DraggableThumbnailTile = ({
     multiSelectedPaths.includes(imageFile.path) && multiSelectedPaths.length > 0 ? multiSelectedPaths : [imageFile.path];
   const { attributes, listeners, setNodeRef: setDraggableRef, transform, isDragging } = useDraggable({
     id: `image:${imageFile.path}`,
-    disabled: !isCustomOrder,
     data: {
       kind: 'image',
       path: imageFile.path,
@@ -1739,12 +1895,12 @@ const DraggableThumbnailTile = ({
       style={{
         width: itemWidth,
         height: itemWidth,
-        transform: isCustomOrder && transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-        opacity: isCustomOrder && isDragging ? 0.18 : 1,
+        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        opacity: isDragging ? 0.18 : 1,
       }}
       className={isOver && isCustomOrder ? 'ring-2 ring-accent rounded-md' : ''}
-      {...(isCustomOrder ? attributes : {})}
-      {...(isCustomOrder ? listeners : {})}
+      {...attributes}
+      {...listeners}
     >
       <Thumbnail
         data={thumbnails[imageFile.path]}
@@ -1778,6 +1934,7 @@ function StaticThumbnailTile({
   imageRatings,
   className,
   onRemoveFromSelection,
+  presentation = 'default',
   style,
 }: {
   activePath: string | null;
@@ -1791,6 +1948,7 @@ function StaticThumbnailTile({
   onImageClick(path: string, event: React.MouseEvent): void;
   onImageDoubleClick(path: string): void;
   onRemoveFromSelection?(): void;
+  presentation?: 'default' | 'frameless';
   style?: React.CSSProperties;
   thumbnailAspectRatio: ThumbnailAspectRatio;
   thumbnails: Record<string, string>;
@@ -1818,6 +1976,7 @@ function StaticThumbnailTile({
         onImageDoubleClick={onImageDoubleClick}
         onLoad={() => loadedThumbnails.add(imageFile.path)}
         path={imageFile.path}
+        presentation={presentation}
         rating={imageRatings?.[imageFile.path] || 0}
         tags={imageFile.tags ?? []}
         aspectRatio={thumbnailAspectRatio}
@@ -3032,6 +3191,7 @@ export default function MainLibrary({
                         onImageClick={onImageClick}
                         onImageDoubleClick={onImageDoubleClick}
                         onRemoveFromSelection={() => handleCompareRemove(imageFile.path)}
+                        presentation="frameless"
                         thumbnails={thumbnails}
                         thumbnailAspectRatio={ThumbnailAspectRatio.Contain}
                         loadedThumbnails={loadedThumbnailsRef.current}
