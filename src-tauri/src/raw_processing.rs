@@ -36,6 +36,17 @@ fn is_linear_raw_format(raw_image: &RawImage) -> bool {
     )
 }
 
+fn clamp_rect_to_bounds(mut rect: rawler::imgop::Rect, width: usize, height: usize) -> rawler::imgop::Rect {
+    rect.p.x = rect.p.x.min(width);
+    rect.p.y = rect.p.y.min(height);
+
+    let max_width = width.saturating_sub(rect.p.x);
+    let max_height = height.saturating_sub(rect.p.y);
+    rect.d.w = rect.d.w.min(max_width);
+    rect.d.h = rect.d.h.min(max_height);
+    rect
+}
+
 #[inline]
 fn srgb_to_linear(value: f32) -> f32 {
     if value <= 0.04045 {
@@ -68,6 +79,33 @@ fn develop_internal(
 
     check_cancel()?;
     let mut raw_image: RawImage = decoder.raw_image(&source, &RawDecodeParams::default(), false)?;
+
+    let raw_width = raw_image.width;
+    let raw_height = raw_image.height;
+
+    if let Some(active_area) = raw_image.active_area {
+        let clamped = clamp_rect_to_bounds(active_area, raw_width, raw_height);
+        if clamped.as_ltrb() != active_area.as_ltrb() {
+            log::warn!(
+                "Clamped RAW active area from {:?} to {:?}",
+                active_area,
+                clamped
+            );
+        }
+        raw_image.active_area = Some(clamped);
+    }
+
+    if let Some(crop_area) = raw_image.crop_area {
+        let clamped = clamp_rect_to_bounds(crop_area, raw_width, raw_height);
+        if clamped.as_ltrb() != crop_area.as_ltrb() {
+            log::warn!(
+                "Clamped RAW crop area from {:?} to {:?}",
+                crop_area,
+                clamped
+            );
+        }
+        raw_image.crop_area = Some(clamped);
+    }
 
     let metadata = decoder.raw_metadata(&source, &RawDecodeParams::default())?;
     let orientation = metadata
