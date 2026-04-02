@@ -5,6 +5,7 @@ use std::fmt;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::Cursor;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -1387,61 +1388,70 @@ fn generate_single_thumbnail_and_cache(
     force_regenerate: bool,
     app_handle: &AppHandle,
 ) -> Option<(String, u8)> {
-    let session_root = session_root_from_settings(app_handle);
-    let (source_path, sidecar_path) = resolve_virtual_paths_for_session(path_str, session_root.as_deref());
+    match panic::catch_unwind(AssertUnwindSafe(|| {
+        let session_root = session_root_from_settings(app_handle);
+        let (source_path, sidecar_path) =
+            resolve_virtual_paths_for_session(path_str, session_root.as_deref());
 
-    let img_mod_time = fs::metadata(source_path)
-        .ok()?
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_secs();
+        let img_mod_time = fs::metadata(source_path)
+            .ok()?
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_secs();
 
-    let (sidecar_mod_time, rating) = if let Ok(content) = fs::read_to_string(&sidecar_path) {
-        let mod_time = fs::metadata(&sidecar_path)
-            .ok()
-            .and_then(|m| m.modified().ok())
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let rating_val = serde_json::from_str::<ImageMetadata>(&content)
-            .ok()
-            .map(|m| m.rating)
-            .unwrap_or(0);
-        (mod_time, rating_val)
-    } else {
-        (0, 0)
-    };
+        let (sidecar_mod_time, rating) = if let Ok(content) = fs::read_to_string(&sidecar_path) {
+            let mod_time = fs::metadata(&sidecar_path)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let rating_val = serde_json::from_str::<ImageMetadata>(&content)
+                .ok()
+                .map(|m| m.rating)
+                .unwrap_or(0);
+            (mod_time, rating_val)
+        } else {
+            (0, 0)
+        };
 
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(path_str.as_bytes());
-    hasher.update(&img_mod_time.to_le_bytes());
-    hasher.update(&sidecar_mod_time.to_le_bytes());
-    let hash = hasher.finalize();
-    let cache_filename = format!("{}.jpg", hash.to_hex());
-    let cache_path = thumb_cache_dir.join(cache_filename);
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(path_str.as_bytes());
+        hasher.update(&img_mod_time.to_le_bytes());
+        hasher.update(&sidecar_mod_time.to_le_bytes());
+        let hash = hasher.finalize();
+        let cache_filename = format!("{}.jpg", hash.to_hex());
+        let cache_path = thumb_cache_dir.join(cache_filename);
 
-    if !force_regenerate
-        && cache_path.exists()
-        && let Ok(data) = fs::read(&cache_path)
-    {
-        let base64_str = general_purpose::STANDARD.encode(&data);
-        return Some((format!("data:image/jpeg;base64,{}", base64_str), rating));
+        if !force_regenerate
+            && cache_path.exists()
+            && let Ok(data) = fs::read(&cache_path)
+        {
+            let base64_str = general_purpose::STANDARD.encode(&data);
+            return Some((format!("data:image/jpeg;base64,{}", base64_str), rating));
+        }
+
+        let settings = crate::file_management::load_settings(app_handle.clone()).unwrap_or_default();
+        let target_width = settings.thumbnail_resolution.unwrap_or(720);
+
+        if let Ok(thumb_image) =
+            generate_thumbnail_data(path_str, gpu_context, preloaded_image, app_handle)
+            && let Ok(thumb_data) = encode_thumbnail(&thumb_image, target_width)
+        {
+            let _ = fs::write(&cache_path, &thumb_data);
+            let base64_str = general_purpose::STANDARD.encode(&thumb_data);
+            return Some((format!("data:image/jpeg;base64,{}", base64_str), rating));
+        }
+        None
+    })) {
+        Ok(result) => result,
+        Err(_) => {
+            log::error!("Panic escaped thumbnail generation for '{}'", path_str);
+            None
+        }
     }
-
-    let settings = crate::file_management::load_settings(app_handle.clone()).unwrap_or_default();
-    let target_width = settings.thumbnail_resolution.unwrap_or(720);
-
-    if let Ok(thumb_image) =
-        generate_thumbnail_data(path_str, gpu_context, preloaded_image, app_handle)
-        && let Ok(thumb_data) = encode_thumbnail(&thumb_image, target_width)
-    {
-        let _ = fs::write(&cache_path, &thumb_data);
-        let base64_str = general_purpose::STANDARD.encode(&thumb_data);
-        return Some((format!("data:image/jpeg;base64,{}", base64_str), rating));
-    }
-    None
 }
 
 #[tauri::command]
