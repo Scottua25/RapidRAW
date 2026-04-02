@@ -1,55 +1,62 @@
-# Ubuntu Install
+# Standalone Ubuntu Installer
 
-This folder contains a one-shot installer for the `scottua/v1.5.3-integration` branch.
+This installer is meant to be usable as a single downloaded script.
+
+## Quickest Way
+
+Download and run it directly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Scottua25/RapidRAW/scottua/v1.5.3-integration/install/install-ubuntu-package.sh -o install-rapidraw.sh
+bash install-rapidraw.sh
+```
 
 ## What It Does
 
-The script:
+The script will:
 
-- installs the Linux build dependencies Tauri needs
-- installs Node.js 22 if your system Node is too old
-- installs Rust `1.94.0` and sets a repo-local override
-- runs `npm install`
-- builds a Debian package for RapidRAW
-- installs that `.deb` with `apt`
+- install any missing Ubuntu build prerequisites it needs
+- download a temporary Node.js runtime if your system Node is missing or too old
+- install a temporary Rust toolchain in a temporary folder
+- clone the `scottua/v1.5.3-integration` branch into a temporary directory
+- build a `.deb` package for RapidRAW
+- install that package with `apt`
+- remove the temporary clone, temporary Rust toolchain, temporary Node download, and other temporary build files
+- remove build-only Ubuntu packages that the script itself had to install
 
-## How To Run It
+## What It Leaves Installed
 
-From the repo root on your Ubuntu machine:
+After cleanup, the goal is to leave only what is needed for the installed app to run locally.
 
-```bash
-chmod +x install/install-ubuntu-package.sh
-./install/install-ubuntu-package.sh
-```
+That means:
 
-If you prefer, this works too:
+- the installed RapidRAW Debian package remains
+- runtime libraries pulled in by `apt` remain
+- temporary source/build artifacts are removed
+- temporary Rust and Node downloads are removed
+
+## Running It From A Cloned Repo
+
+If you already cloned the repo, you can still use the same script:
 
 ```bash
 bash install/install-ubuntu-package.sh
 ```
 
-## Recommended Clone Command
+It will still perform its own temporary clone/build/install flow.
 
-```bash
-git clone --branch scottua/v1.5.3-integration https://github.com/Scottua25/RapidRAW.git
-cd RapidRAW
-./install/install-ubuntu-package.sh
-```
+## Launching The App
 
-## After Install
+After installation, launch RapidRAW from your application menu.
 
-You can launch the app from the desktop applications menu.
-
-If you want to try launching from a terminal:
+You can also try:
 
 ```bash
 gtk-launch io.github.CyberTimon.RapidRAW
 ```
 
-If your desktop environment does not expose that launcher cleanly, you can also search for `RapidRAW` in the app menu.
-
 ## Notes
 
-- The script uses `sudo` for system packages and for installing the generated `.deb`.
-- The package identifier is still `io.github.CyberTimon.RapidRAW`, matching the current upstream-aligned branch.
-- Re-running the script is safe if you want to rebuild after pulling updates.
+- The script uses `sudo` for package installation.
+- The package identifier is currently `io.github.CyberTimon.RapidRAW`.
+- Re-running the script is safe if you want to rebuild after updates.
