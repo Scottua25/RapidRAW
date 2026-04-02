@@ -107,6 +107,11 @@ fn develop_internal(
         raw_image.crop_area = Some(clamped);
     }
 
+    if fast_demosaic && raw_image.crop_area.is_some() {
+        log::warn!("Disabling RAW default crop for fast thumbnail develop path");
+        raw_image.crop_area = None;
+    }
+
     let metadata = decoder.raw_metadata(&source, &RawDecodeParams::default())?;
     let orientation = metadata
         .exif
