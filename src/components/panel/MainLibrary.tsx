@@ -2441,14 +2441,8 @@ export default function MainLibrary({
     onLibraryLoupeZoomChange(1);
   }, [loupeImage?.path, onLibraryLoupeZoomActiveChange, onLibraryLoupeZoomChange]);
 
-  const comparePreviewPaths = useMemo(() => visibleCompareImages.map((image) => image.path), [visibleCompareImages]);
   const loupePreviewPaths = useMemo(() => (loupeImage ? [loupeImage.path] : []), [loupeImage]);
 
-  const comparePreviewUrls = useHighQualityPreviewUrls(
-    comparePreviewPaths,
-    libraryPresentationMode === LibraryPresentationMode.Compare && visibleCompareImages.length > 0,
-    `compare:${visibleCompareImages.length}`,
-  );
   const loupePreviewUrls = useHighQualityPreviewUrls(
     loupePreviewPaths,
     libraryPresentationMode === LibraryPresentationMode.Loupe && !!loupeImage,
@@ -3183,7 +3177,7 @@ export default function MainLibrary({
                       <StaticThumbnailTile
                         key={imageFile.path}
                         className="min-w-0 flex-1 h-full overflow-hidden"
-                        imageData={comparePreviewUrls[imageFile.path]}
+                        imageData={thumbnails[imageFile.path]}
                         imageFile={imageFile}
                         activePath={activePath}
                         multiSelectedPaths={multiSelectedPaths}
