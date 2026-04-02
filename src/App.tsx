@@ -1374,6 +1374,7 @@ function App() {
           });
 
     const list = [...filteredBySearch];
+    const originalIndexByPath = new Map(list.map((image, index) => [image.path, index]));
 
     const parseShutter = (val: string | undefined): number | null => {
       if (!val) return null;
@@ -1419,6 +1420,32 @@ function App() {
       };
 
       switch (key) {
+        case 'custom': {
+          if (selectedCollectionName) {
+            comparison = (originalIndexByPath.get(a.path) ?? 0) - (originalIndexByPath.get(b.path) ?? 0);
+            break;
+          }
+
+          const scopePath = currentFolderPath ?? rootPath;
+          const scopeKey = scopePath
+            ? `${libraryViewMode === LibraryViewMode.Recursive ? 'recursive' : 'folder'}:${scopePath}`
+            : null;
+          const customOrder = scopeKey ? appSettings?.customLibraryOrders?.[scopeKey] ?? [] : [];
+          const orderIndex = new Map(customOrder.map((path, index) => [path, index]));
+          const indexA = orderIndex.get(a.path);
+          const indexB = orderIndex.get(b.path);
+
+          if (indexA !== undefined && indexB !== undefined) {
+            comparison = indexA - indexB;
+          } else if (indexA !== undefined) {
+            comparison = -1;
+          } else if (indexB !== undefined) {
+            comparison = 1;
+          } else {
+            comparison = (originalIndexByPath.get(a.path) ?? 0) - (originalIndexByPath.get(b.path) ?? 0);
+          }
+          break;
+        }
         case 'date_taken': {
           const dateA = a.exif?.DateTimeOriginal;
           const dateB = b.exif?.DateTimeOriginal;
@@ -1469,13 +1496,28 @@ function App() {
       }
 
       if (comparison === 0 && key !== 'name') {
+        if (key === 'custom') {
+          return (originalIndexByPath.get(a.path) ?? 0) - (originalIndexByPath.get(b.path) ?? 0);
+        }
         return a.path.localeCompare(b.path);
       }
 
       return order === SortDirection.Ascending ? comparison : -comparison;
     });
     return list;
-  }, [imageList, sortCriteria, imageRatings, filterCriteria, supportedTypes, searchCriteria, appSettings]);
+  }, [
+    imageList,
+    sortCriteria,
+    imageRatings,
+    filterCriteria,
+    supportedTypes,
+    searchCriteria,
+    appSettings,
+    selectedCollectionName,
+    currentFolderPath,
+    rootPath,
+    libraryViewMode,
+  ]);
 
   useEffect(() => {
     if (selectedImage?.path && selectedImage.isReady && finalPreviewUrl) {
@@ -2545,6 +2587,94 @@ function App() {
       }
     },
     [expandedFolders, appSettings?.enableFolderImageCounts],
+  );
+
+  const handleReorderImages = useCallback(
+    async (draggedPath: string, targetPath: string) => {
+      if (draggedPath === targetPath) {
+        return;
+      }
+
+      setImageList((prevList) => {
+        const reordered = [...prevList];
+        const fromIndex = reordered.findIndex((image) => image.path === draggedPath);
+        const toIndex = reordered.findIndex((image) => image.path === targetPath);
+
+        if (fromIndex === -1 || toIndex === -1) {
+          return prevList;
+        }
+
+        const [moved] = reordered.splice(fromIndex, 1);
+        reordered.splice(toIndex, 0, moved);
+        return reordered;
+      });
+
+      const customSort = { key: 'custom', order: SortDirection.Ascending } as SortCriteria;
+      setSortCriteria(customSort);
+
+      if (selectedCollectionName && rootPath) {
+        const currentList = [...imageList];
+        const fromIndex = currentList.findIndex((image) => image.path === draggedPath);
+        const toIndex = currentList.findIndex((image) => image.path === targetPath);
+        if (fromIndex === -1 || toIndex === -1) {
+          return;
+        }
+
+        const [moved] = currentList.splice(fromIndex, 1);
+        currentList.splice(toIndex, 0, moved);
+
+        const orderedVcIds = currentList
+          .map((image) => image.path.split('?vc=')[1]?.split('&')[0] ?? null)
+          .filter((vcId): vcId is string => !!vcId);
+
+        await invoke(Invokes.SaveCollectionOrder, {
+          sessionRoot: rootPath,
+          collectionName: selectedCollectionName,
+          orderedVcIds,
+        });
+
+        if (appSettings) {
+          handleSettingsChange({ ...appSettings, sortCriteria: customSort });
+        }
+        return;
+      }
+
+      const scopePath = currentFolderPath ?? rootPath;
+      if (!scopePath || !appSettings) {
+        return;
+      }
+
+      const scopeKey = `${libraryViewMode === LibraryViewMode.Recursive ? 'recursive' : 'folder'}:${scopePath}`;
+      const currentList = [...imageList];
+      const fromIndex = currentList.findIndex((image) => image.path === draggedPath);
+      const toIndex = currentList.findIndex((image) => image.path === targetPath);
+      if (fromIndex === -1 || toIndex === -1) {
+        return;
+      }
+
+      const [moved] = currentList.splice(fromIndex, 1);
+      currentList.splice(toIndex, 0, moved);
+
+      const customLibraryOrders = {
+        ...(appSettings.customLibraryOrders || {}),
+        [scopeKey]: currentList.map((image) => image.path),
+      };
+
+      await handleSettingsChange({
+        ...appSettings,
+        sortCriteria: customSort,
+        customLibraryOrders,
+      });
+    },
+    [
+      appSettings,
+      currentFolderPath,
+      handleSettingsChange,
+      imageList,
+      libraryViewMode,
+      rootPath,
+      selectedCollectionName,
+    ],
   );
 
   useEffect(() => {

@@ -1754,6 +1754,7 @@ export default function MainLibrary({
   const sortOptions = useMemo(() => {
     const exifEnabled = appSettings?.enableExifReading ?? false;
     return [
+      { key: 'custom', label: 'Custom' },
       { key: 'name', label: 'File Name' },
       { key: 'date', label: 'Date Modified' },
       { key: 'rating', label: 'Rating' },
